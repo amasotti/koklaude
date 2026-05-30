@@ -8,6 +8,7 @@ mod daemon;
 mod hook;
 mod ipc;
 mod playback;
+mod setup;
 mod toggle;
 mod transcript;
 
