@@ -15,6 +15,10 @@ clippy:
 test:
     cargo test --workspace
 
+# Audit dependencies: licenses, advisories, bans. Needs `cargo install cargo-deny`.
+deny:
+    ./cargo-deny.sh
+
 # Format the code.
 fmt:
     cargo fmt --all

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+#
+# https://github.com/EmbarkStudios/cargo-deny
+#
+# cargo-deny checks our dependency tree for copy-left licenses,
+# duplicate dependencies, and rustsec advisories (https://rustsec.org/advisories).
+#
+# Install: `cargo install cargo-deny`
+
+set -eu
+script_path=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )
+cd "$script_path"
+set -x
+
+# cargo install cargo-deny
+cargo deny --all-features --log-level error --target aarch64-apple-darwin check
+cargo deny --all-features --log-level error --target i686-unknown-linux-gnu check
+cargo deny --all-features --log-level error --target x86_64-apple-darwin check
+cargo deny --all-features --log-level error --target x86_64-unknown-linux-gnu check
+cargo deny --all-features --log-level error --target x86_64-unknown-linux-musl check
+cargo deny --all-features --log-level error --target x86_64-unknown-redox check

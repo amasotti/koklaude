@@ -44,3 +44,17 @@ jobs:
 
       - name: Tests
         run: cargo test --workspace
+
+  cargo-deny:
+    name: cargo-deny — licenses / advisories / bans
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          arguments: --all-features
