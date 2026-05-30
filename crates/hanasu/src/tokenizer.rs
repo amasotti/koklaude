@@ -4,7 +4,6 @@
 //! split the text on those marks ourselves, phonemize each punctuation-free chunk,
 //! re-insert the marks, then map the result through the vocab. Matches the
 //! kokoro-onnx reference (`preserve_punctuation=True`). See docs/phase2-engine-api.md.
-#![allow(dead_code)] // wired into Engine in slice 5
 
 use std::collections::HashMap;
 use std::sync::OnceLock;

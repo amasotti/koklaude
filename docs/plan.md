@@ -27,24 +27,16 @@ across all 54 voices works. Reproduction: `docs/spike.md`; prereqs:
 **Surfaced for Phase 2:** espeak emits newlines on clause breaks and the naive
 char-map drops punctuation — Phase 2 must preserve punctuation (see its spec).
 
-## Phase 2 — `hanasu` engine API 🎯 next
-**Design settled** — full spec + rationale in [`phase2-engine-api.md`](phase2-engine-api.md).
-- API: `Engine::load(model, voice, speed)` once → `synth(text) -> Audio { samples, sample_rate }`
-  (pure samples; the binary owns WAV + `afplay`).
-- Pipeline: text → espeak CLI g2p **preserving punctuation** → vocab tokenize
-  (clamp ≤ 510) → `ort` inference → samples. Matches the kokoro-onnx reference
-  (espeak path), not the full Misaki library.
+## Phase 2 — `hanasu` engine API ✅
+Public API `Engine::load(model, voices, voice, speed)` → `synth(text) -> Audio
+{ samples, sample_rate }` (pure samples; the binary owns WAV + `afplay`).
+Pipeline: text → espeak CLI g2p **preserving punctuation** → vocab tokenize
+(clamp ≤ 510) → `ort` inference → samples (kokoro-onnx reference, not full Misaki).
+Modules: `error` (thiserror) · `voice` (npz via `zip`) · `g2p` (espeak CLI) ·
+`tokenizer` (split/interleave/encode) · `engine` (`Session` in a `Mutex`). 17 tests
+incl. an end-to-end smoke test. Full spec: [`phase2-engine-api.md`](phase2-engine-api.md).
 
-**Next steps (incremental slices, each reviewable + tested):**
-1. Skeleton — `Engine`/`Audio`/error type; `ort` → `[dependencies]`.
-2. Voice loading from the npz (test vs known `af_heart` bytes).
-3. g2p module — espeak CLI wrapper + fixtures.
-4. Tokenizer — punctuation-aware split + interleave + vocab map + clamp (heavy unit tests).
-5. `synth` wiring + smoke test.
-
-Open (small): voice npz parsing approach, error type, >510-token handling.
-
-## Phase 3 — `koklaude` front end (pure, testable)
+## Phase 3 — `koklaude` front end (pure, testable) 🎯 next
 - `transcript`: parse Stop-hook stdin JSON + extract the last assistant turn.
 - `clean`: markdown → speakable prose (drop code, strip markdown) — rebuilt with
   unit tests.
@@ -74,9 +66,10 @@ Open (small): voice npz parsing approach, error type, >510-token handling.
   (successor to the dead `kokoroxide`; MIT).
 - **More assistants:** Codex / pi adapters — a new front end per assistant, the
   same engine (see architecture › Extensibility).
-- **Optional pure-Rust G2P:** explore `misaki-rs` behind a non-default feature for
-  an espeak-free (and thus MIT-licensable) build — accepting weaker pronunciation
-  on out-of-vocabulary and non-English text. Not a priority; espeak is the default.
+- **Optional pure-Rust G2P:** `misaki-rs` with its `espeak` feature is a full
+  Misaki port (POS-aware, number expansion) that could improve prosody, but it
+  re-links espeak. The espeak-free build was tested and rejected (Phase 1.5: it
+  spells jargon letter-by-letter). espeak CLI stays the default.
 - Linux/Windows audio playback (beyond macOS `afplay`).
 
 ## Open questions (revisit as we go)

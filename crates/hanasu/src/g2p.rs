@@ -1,5 +1,4 @@
 //! Grapheme-to-phoneme via the espeak-ng CLI.
-#![allow(dead_code)] // wired into the tokenizer in slice 4
 
 use std::process::Command;
 

@@ -1,5 +1,4 @@
 //! Loading a Kokoro voice from the voices npz.
-#![allow(dead_code)] // wired into Engine in slice 5
 
 use crate::{Error, Result};
 use std::fs::File;
