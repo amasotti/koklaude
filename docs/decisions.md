@@ -72,7 +72,7 @@ over a unix socket; it auto-spawns on first use and exits after 30 min idle.
 RAM when you're not coding.
 
 ## D9 — Instant toggle via a flag file
-**Decision:** `~/.claude/koklaude/enabled` presence = on; `koklaude on` / `off`
+**Decision:** `~/.config/koklaude/enabled` presence = on; `koklaude on` / `off`
 flip it. The hook checks it first and exits silently when off.
 **Why:** Turn speech on/off mid-session with no uninstall or restart.
 

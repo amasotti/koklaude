@@ -11,7 +11,7 @@ text → [espeak-ng] → IPA phonemes → [Kokoro vocab] → token ids → [ONNX
 ## Prerequisites
 
 See [`docs/prerequisites.md`](prerequisites.md) — `espeak-ng`, the model +
-voices under `~/.claude/koklaude/`, and the build toolchain. Get those in place
+voices under `~/.config/koklaude/`, and the build toolchain. Get those in place
 first, then come back here.
 
 `voices-v1.0.bin` is a zip (npz) of `<voice>.npy` files, each a numpy `<f4`
@@ -59,7 +59,7 @@ output 'audio' shape=[39000], 39000 samples
 Read straight from the npz; prefix = language, then `f`/`m` = female/male:
 
 ```sh
-unzip -l ~/.claude/koklaude/voices-v1.0.bin | grep -o '[a-z][a-z]_[a-z]*'
+unzip -l ~/.config/koklaude/voices-v1.0.bin | grep -o '[a-z][a-z]_[a-z]*'
 ```
 
 | Prefix | Language | Examples |

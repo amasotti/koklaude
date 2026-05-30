@@ -46,7 +46,7 @@ Each unit has one job, a narrow interface, and can be tested alone.
 | `daemon` | Own one warm `engine`; accept socket connections; enqueue text; play serially. Idle-exit after 30 min. | socket loop |
 | `client` | Front-end side: connect to the daemon (spawn it if absent), send text. Never blocks Claude Code. | `String` → `()` |
 | `config` | `config.toml` (voice, speed, idle timeout) + the `enabled` toggle flag. | — |
-| `paths` | Resolve everything under `~/.claude/koklaude/`. | — |
+| `paths` | Resolve everything under `~/.config/koklaude/`. | — |
 | `setup` | `koklaude init`: download model, write default config, merge the Stop hook into `~/.claude/settings.json`, enable. | — |
 
 ## The engine pipeline (the only novel part)
@@ -67,14 +67,14 @@ The Kokoro-82M model is the same ONNX artifact every implementation uses. Our en
 A cold model load is too slow to run on every reply. So:
 
 - The **hook** is a thin client. If the socket is missing, it spawns `koklaude daemon` and waits for it to be ready.
-- The **daemon** loads the model once and serves many replies over `~/.claude/koklaude/daemon.sock`.
+- The **daemon** loads the model once and serves many replies over `~/.config/koklaude/daemon.sock`.
 - Requests go on a **queue** and play one at a time — text is never dropped.
 - After 30 minutes idle the daemon exits to free RAM; the next reply respawns it.
 
 ## Filesystem layout
 
 ```
-~/.claude/koklaude/
+~/.config/koklaude/
   ├─ kokoro.onnx     model weights (downloaded by `init`)
   ├─ voices.bin      voice styles  (downloaded by `init`)
   ├─ config.toml     voice, speed, idle-timeout

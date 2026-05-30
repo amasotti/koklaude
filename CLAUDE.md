@@ -32,7 +32,7 @@ Local, offline TTS for Claude Code. Two-crate Rust workspace:
 - Claude works closely following the plan, brainstorming what is clear or undecided there, after approval implementing it. Phases that are completed are also marked as completed in the plan.md
 
 ## Prerequisites (manual today; `koklaude init` automates later — Phase 5)
-- `espeak-ng` on PATH; model + voices under `~/.claude/koklaude/`.
+- `espeak-ng` on PATH; model + voices under `~/.config/koklaude/`.
   See docs/prerequisites.md.
 - `*.onnx`, `*.bin`, `*.wav` are gitignored (large / scratch — never commit).
 

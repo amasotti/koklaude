@@ -92,11 +92,11 @@ text-to-speech command in its own right (and how we validate the engine).
 koklaude say "Local, offline text to speech in one command."
 ```
 
-Voice and speed are configurable — globally via `~/.claude/koklaude/config.toml`,
+Voice and speed are configurable — globally via `~/.config/koklaude/config.toml`,
 and per-call via `say --voice <name> --speed <n>` (a flag overrides the file).
 
 ```toml
-# ~/.claude/koklaude/config.toml — both keys optional; omitted = built-in default
+# ~/.config/koklaude/config.toml — both keys optional; omitted = built-in default
 voice = "af_heart"   # any of the 54 Kokoro voices (e.g. am_adam, bf_emma)
 speed = 1.0          # pace multiplier; 1.0 = normal
 ```
@@ -108,7 +108,7 @@ The file is read today; `koklaude init` will write it for you (Phase 5). Precede
 
 `koklaude init` will eventually automate setup. Today, two things are needed on
 the machine: **`espeak-ng`** and the **Kokoro model + voices** under
-`~/.claude/koklaude/`. See [`docs/prerequisites.md`](docs/prerequisites.md). With
+`~/.config/koklaude/`. See [`docs/prerequisites.md`](docs/prerequisites.md). With
 those in place you can already run the Phase 1 engine spike — [`docs/spike.md`](docs/spike.md).
 
 ## Design at a glance
@@ -116,7 +116,7 @@ those in place you can already run the Phase 1 engine spike — [`docs/spike.md`
 - **Speaks** the full reply with code blocks stripped (code read aloud is noise).
 - **Never drops text**: overlapping replies queue rather than interrupt — losing half a sentence is worse than slightly stale audio.
 - **Never blocks Claude Code**: any TTS error is logged and swallowed; the hook always exits cleanly.
-- Everything koklaude owns lives under `~/.claude/koklaude/`.
+- Everything koklaude owns lives under `~/.config/koklaude/`.
 
 ## Beyond Claude Code
 
