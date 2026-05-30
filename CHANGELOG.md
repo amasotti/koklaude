@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file (created with git cliff).
 
+## [0.0.2] - 2026-05-30
+
+[Compare with last version](https://github.com/amasotti/koklaude/compare/1a3b75bd5013a5ef8280431692a2266eacc75e29..daa396641c39955e91e4ef3fe8392fd47c6641ca)
+### ⚙️ Miscellaneous Tasks
+
+
+- Release pipelines ([daa3966](https://github.com/amasotti/koklaude/commit/daa396641c39955e91e4ef3fe8392fd47c6641ca))
+
 ## [0.0.1] - 2026-05-30
 
 ### 🚀 Features
