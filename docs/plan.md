@@ -66,6 +66,11 @@ Pure logic before I/O; the chain-validating `say` lands early so we feel sound.
 - **3e — `on`/`off` toggle.** Enabled-flag as a file under the koklaude home
   (presence = on). Pure `is_enabled()` + `enable()`/`disable()`; wire `on`/`off`
   commands. Unit-test the flag round-trip.
+- **3f — configurable voice + speed.** `~/.claude/koklaude/config.toml`
+  (`voice`, `speed`); `Config::load()` reads it if present, else built-in
+  defaults (`toml`/`serde` already deps). `say --voice/--speed` flags override
+  per-call. Precedence: CLI flag > config.toml > default. Phase 5 `init` *writes*
+  this file (install params); Phase 3 only *reads* it. Tests: parse + precedence.
 
 Open within the phase:
 - Does `say` run text through `clean`, or speak raw? (Lean: raw — `say` is a

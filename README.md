@@ -81,6 +81,20 @@ koklaude on                   # speech back
 koklaude say "hello there"    # manual test
 ```
 
+### Standalone playback mode
+
+`koklaude` isn't only a Claude Code hook — `koklaude say "..."` is a self-contained
+TTS player: it synthesizes the text and plays it straight through your speakers,
+no daemon, no hook, no Claude involved. Useful as a quick local
+text-to-speech command in its own right (and how we validate the engine).
+
+```bash
+koklaude say "Local, offline text to speech in one command."
+```
+
+Voice and speed will be configurable — globally via `~/.claude/koklaude/config.toml`
+(written by `koklaude init`) and per-call via `say --voice <name> --speed <n>`.
+
 ### Prerequisites
 
 `koklaude init` will eventually automate setup. Today, two things are needed on
