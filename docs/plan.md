@@ -10,17 +10,24 @@ something we can run and check.
 - CLI skeleton (`init`/`daemon`/`hook`/`on`/`off`/`say`) compiles.
 - `cargo check --workspace` is green.
 
-## Phase 1 — Engine spike (de-risk the one real unknown) 🎯 next
+## Phase 1 — Engine spike (de-risk the one real unknown) ✅
 **Goal:** prove text → audible WAV through `hanasu`, end to end, once.
-**Why first:** the only genuine unknown is Kokoro-82M's ONNX input contract —
-tensor names/shapes for `input_ids` / `style` / `speed`, and the phoneme→id
-vocabulary. Everything else is plumbing. Pin this against the real model file
-before building anything on top, using `kokoro-js` / `kokoro-onnx` as the
-reference spec.
-**Done when:** a throwaway test loads the model, feeds known phonemes + a voice,
-and produces a WAV that sounds right.
+**Done:** `crates/hanasu/examples/spike.rs` runs the full chain (espeak g2p →
+vocab tokenize → `ort` inference → WAV) and plays clear audio; voice switching
+across all 54 voices works. Reproduction: `docs/spike.md`; prereqs:
+`docs/prerequisites.md`.
 
-## Phase 2 — `hanasu` engine API
+**Verified ONNX I/O contract** (the unknown this phase existed to pin):
+- inputs: `tokens` int64 `[1, seq]` (**not** `input_ids`), `style` f32 `[1, 256]`,
+  `speed` f32 `[1]`
+- output: `audio` f32 `[audio_length]` — mono PCM @ 24 kHz
+- tokens wrapped with a leading/trailing `0`; style row selected by token count
+- vocab = hexgrad/Kokoro-82M `config.json` › `vocab` (114 entries)
+
+**Surfaced for Phase 2:** espeak emits newlines on clause breaks and the naive
+char-map drops punctuation — real Misaki normalization is needed.
+
+## Phase 2 — `hanasu` engine API 🎯 next
 - Add deps: `ort`, `espeak-rs` (espeak-ng bindings), audio/WAV.
 - Public API: load the model + a voice once; `synth(text) -> wav`.
 - Pipeline: text → `espeak-ng` IPA phonemes → tokenize (Misaki vocab) → `ort` inference → samples.
@@ -62,7 +69,7 @@ and produces a WAV that sounds right.
 - Linux/Windows audio playback (beyond macOS `afplay`).
 
 ## Open questions (revisit as we go)
-- Exact Kokoro ONNX I/O contract — resolved in Phase 1.
+- ~~Exact Kokoro ONNX I/O contract~~ — ✅ resolved in Phase 1 (see above).
 - Best default voice.
 - Streaming/chunked synthesis for long replies vs. synth-then-play.
 - crates.io name for `hanasu` at publish time (the name is free today).
