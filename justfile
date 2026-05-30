@@ -19,6 +19,12 @@ test:
 fmt:
     cargo fmt --all
 
+build:
+    cargo build
+
+release:
+    cargo build --release
+
 # Phase 1 engine spike: text → phonemes → tokens → audio, then play.
 # Needs ~/.claude/koklaude/{kokoro-v1.0.onnx,voices-v1.0.bin} + espeak-ng + unzip.
 # Defaults to voice `af_heart`, text "Hello world". Examples:
