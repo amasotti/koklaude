@@ -12,6 +12,7 @@
 
 mod engine;
 mod error;
+mod g2p;
 mod voice;
 
 pub use engine::{Audio, Engine};

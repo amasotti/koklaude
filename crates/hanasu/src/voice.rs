@@ -1,11 +1,11 @@
 //! Loading a Kokoro voice from the voices npz.
 #![allow(dead_code)] // wired into Engine in slice 5
 
+use crate::{Error, Result};
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use zip::result::ZipError;
-use crate::{Error, Result};
 
 const STYLE_DIM: usize = 256;
 const ROW_BYTES: usize = STYLE_DIM * 4; // one [256] f32 row
