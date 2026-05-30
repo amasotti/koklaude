@@ -1,6 +1,7 @@
 //! koklaude — local, offline text-to-speech for Claude Code.
 //!
 
+mod clean;
 mod config;
 mod playback;
 
