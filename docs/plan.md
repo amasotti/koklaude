@@ -28,7 +28,7 @@ across all 54 voices works. Reproduction: `docs/spike.md`; prereqs:
 char-map drops punctuation — real Misaki normalization is needed.
 
 ## Phase 2 — `hanasu` engine API 🎯 next
-- Add deps: `ort`, `espeak-rs` (espeak-ng bindings), audio/WAV.
+- Add deps: `ort`, audio/WAV (espeak-ng is the external CLI, not a crate).
 - Public API: load the model + a voice once; `synth(text) -> wav`.
 - Pipeline: text → `espeak-ng` IPA phonemes → tokenize (Misaki vocab) → `ort` inference → samples.
 - Unit tests for tokenization + the phoneme mapping; a smoke test for `synth`.
@@ -60,7 +60,7 @@ char-map drops punctuation — real Misaki normalization is needed.
 ## Later (post-1.0)
 - **Extract `hanasu`** to its own repo (`git subtree split`) and publish to
   crates.io — the maintained Kokoro engine on `ort` 2.0 the ecosystem is missing
-  (successor to the dead `kokoroxide`; GPL-3.0).
+  (successor to the dead `kokoroxide`; MIT).
 - **More assistants:** Codex / pi adapters — a new front end per assistant, the
   same engine (see architecture › Extensibility).
 - **Optional pure-Rust G2P:** explore `misaki-rs` behind a non-default feature for

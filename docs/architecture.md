@@ -53,12 +53,12 @@ Each unit has one job, a narrow interface, and can be tested alone.
 
 The Kokoro-82M model is the same ONNX artifact every implementation uses. Our engine is just the wiring around it:
 
-1. **Phonemize** — `espeak-ng` (via the `espeak-rs` bindings) turns text into IPA phonemes. It handles arbitrary words, names, technical jargon, and many languages — the cases a fixed embedded dictionary cannot. This is why `hanasu` links `espeak-ng`, and why the project is GPL-3.0.
+1. **Phonemize** — `espeak-ng` (invoked as an external CLI) turns text into IPA phonemes. It handles arbitrary words, names, technical jargon, and many languages — the cases a fixed embedded dictionary cannot. `hanasu` calls espeak-ng as a separate program (not linked), so the project stays MIT.
 2. **Tokenize** — map the IPA phoneme string to the token ids Kokoro expects (the Misaki phoneme vocabulary — a small fixed table, no extra crate).
 3. **Infer** — `ort` 2.0 runs the model: token ids + a per-voice style vector (+ speed) → audio samples.
 4. **Emit** — samples → WAV → `afplay` (macOS).
 
-`espeak-ng` is a build/runtime dependency of `hanasu` (the `espeak-rs-sys` crate statically links it). `koklaude init` checks it is present.
+`espeak-ng` is a runtime dependency of `hanasu`, invoked as an external CLI (not linked). `koklaude init` checks it is present.
 
 **Known unknown to pin first:** Kokoro-82M's exact ONNX input contract — the tensor names/shapes for `input_ids`, `style`, `speed`, and the precise phoneme→id vocabulary. This is settled with a smoke test against the real model file before any further engine code (see [`plan.md`](plan.md)), using `kokoro-js` / `kokoro-onnx` as the reference spec.
 

@@ -63,7 +63,7 @@ flowchart TD
     S --> AUDIO[WAV to afplay]
 ```
 
-- **`espeak-ng`** (via the [`espeak-rs`](https://lib.rs/crates/espeak-rs) bindings) — grapheme→phoneme for arbitrary words, names, jargon, and many languages. This is what lets koklaude pronounce real-world, non-English, domain-heavy text correctly — and what makes the build GPL-3.0.
+- **`espeak-ng`** (invoked as an external CLI) — grapheme→phoneme for arbitrary words, names, jargon, and many languages. This is what lets koklaude pronounce real-world, non-English, domain-heavy text correctly. You install it yourself ([prerequisites](docs/prerequisites.md)); calling it arm's-length keeps koklaude MIT.
 - **`ort` 2.0** — runs the Kokoro ONNX model.
 - A small background **daemon** keeps the model loaded so speech starts fast; it auto-spawns on first use and exits after 30 min idle.
 
@@ -103,11 +103,13 @@ Supporting **Codex**, **pi**, or another assistant later means adding a small ad
 
 ## License
 
-**GPL-3.0-or-later.** koklaude links `espeak-ng` for phonemization, which is copyleft — so koklaude and the `hanasu` engine are GPL-3.0. This binds koklaude and its derivatives; it does **not** affect the assistant you talk to, or the code you write while using it. Rationale in [`docs/decisions.md`](docs/decisions.md).
+**MIT.** Use koklaude and the `hanasu` engine freely.
+
+koklaude doesn't bundle or link `espeak-ng` — it calls the separately installed `espeak-ng` as an **external CLI** (the way MIT tools shell out to `git` or `ffmpeg`), so espeak's GPL doesn't propagate. **You install `espeak-ng` yourself** — see [`docs/prerequisites.md`](docs/prerequisites.md). Rationale in [`docs/decisions.md`](docs/decisions.md) (D3/D4). *Not legal advice.*
 
 ## Acknowledgements
 
 - [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) by hexgrad 
-- [`espeak-ng`](https://github.com/espeak-ng/espeak-ng) · [`espeak-rs`](https://lib.rs/crates/espeak-rs) 
+- [`espeak-ng`](https://github.com/espeak-ng/espeak-ng) 
 - [`ort`](https://github.com/pykeio/ort) by pykeio 
 

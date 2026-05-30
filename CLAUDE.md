@@ -44,8 +44,8 @@ Local, offline TTS for Claude Code. Two-crate Rust workspace:
   `speed` f32[1]; output `audio` f32 (mono 24 kHz). Full detail: docs/plan.md.
 
 ## Gotchas
-- g2p currently shells out to the `espeak-ng` CLI (this revises decisions.md D3,
-  which specified espeak-rs — ADR update pending).
+- g2p shells out to the `espeak-ng` CLI (not linked) — keeps the project MIT
+  (decisions.md D3/D4).
 - `crates/hanasu/examples/spike.rs` is throwaway; its naive tokenizer is NOT the
   real one (Phase 2 builds that).
 - Python stdlib `wave` can't parse Kokoro's f32 (IEEE-float) WAV; `afplay` does.

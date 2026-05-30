@@ -6,7 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-# Engine dependencies (ort, espeak-rs, audio) are added when we implement the
+# Engine dependencies (ort, audio) are added when we implement the
 # pipeline — see ../../docs/plan.md. Kept empty until then so the workspace
 # builds cleanly during scaffolding.
 
