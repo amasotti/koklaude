@@ -93,6 +93,7 @@ pub fn write_default_config(home: &Path) -> Result<bool> {
     let toml = toml::to_string(&defaults).context("serialize default config")?;
     file.write_all(toml.as_bytes())
         .with_context(|| format!("write {path:?}"))?;
+    file.sync_all().with_context(|| format!("sync {path:?}"))?;
     Ok(true)
 }
 

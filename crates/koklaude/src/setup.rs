@@ -263,6 +263,9 @@ pub fn uninstall(home: &Path, purge: bool) -> Result<()> {
 /// is a hard safety wall: no matter what the user points `$KOKLAUDE_HOME` at, we
 /// will never `remove_dir_all` a parent, a home dir, `/`, or a symlink's target.
 fn purge_home(home: &Path) -> Result<()> {
+    // Re-encode from components: strips trailing slashes and `.` segments.
+    let home = home.components().as_path();
+
     if home.file_name() != Some(OsStr::new("koklaude")) {
         bail!(
             "refusing to purge {home:?}: final path component must be exactly \"koklaude\" \
@@ -478,11 +481,11 @@ mod tests {
     /// no shell, no quoting) and still recognized as ours.
     #[test]
     fn merge_handles_binary_path_with_spaces() {
-        let exe = Path::new("/Users/some user/.cargo/bin/koklaude");
+        let exe = Path::new("/opt/my tools/bin/koklaude");
         let got = merge_stop_hook(json!({}), exe).unwrap();
         let ours = our_hooks(&got);
         assert_eq!(ours.len(), 1);
-        assert_eq!(ours[0]["command"], "/Users/some user/.cargo/bin/koklaude");
+        assert_eq!(ours[0]["command"], "/opt/my tools/bin/koklaude");
         assert_eq!(ours[0]["args"], json!(["hook"]));
     }
 
@@ -582,10 +585,11 @@ mod tests {
 
     #[test]
     fn purge_refuses_home_root_and_parents() {
-        // Final component is the user's home / a parent — never koklaude → refused.
-        assert!(purge_home(Path::new("/Users/toni")).is_err());
+        // Final component is a home dir / a parent — never koklaude → refused.
+        // (These bail at the name check, so the paths need not exist on disk.)
+        assert!(purge_home(Path::new("/home/someone")).is_err());
         assert!(purge_home(Path::new("/")).is_err());
-        assert!(purge_home(Path::new("/Users/toni/.config")).is_err());
+        assert!(purge_home(Path::new("/home/someone/.config")).is_err());
     }
 
     #[test]
@@ -596,7 +600,8 @@ mod tests {
     }
 
     /// Even if a symlink is *named* `koklaude`, we must not follow it and nuke
-    /// its target.
+    /// its target — with OR without a trailing slash (a trailing slash makes
+    /// `lstat` dereference the symlink, which must not defeat the guard).
     #[cfg(unix)]
     #[test]
     fn purge_refuses_symlink_named_koklaude() {
@@ -609,10 +614,13 @@ mod tests {
         let _ = std::fs::remove_file(&link);
         std::os::unix::fs::symlink(&target, &link).unwrap();
 
-        assert!(purge_home(&link).is_err());
-        assert!(
-            target.join("keep.txt").exists(),
-            "symlink target must survive"
-        );
+        let with_slash = PathBuf::from(format!("{}/", link.display()));
+        for p in [&link, &with_slash] {
+            assert!(purge_home(p).is_err(), "must refuse symlink: {p:?}");
+            assert!(
+                target.join("keep.txt").exists(),
+                "symlink target must survive ({p:?})"
+            );
+        }
     }
 }
