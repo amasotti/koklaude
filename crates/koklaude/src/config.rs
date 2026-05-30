@@ -4,6 +4,8 @@
 //! built-in defaults. Phase 5 `init` *writes* that file (install params); here
 //! we only *read* it. CLI flags (`say --voice/--speed`) override per-call.
 
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -74,18 +76,23 @@ impl Config {
 /// a user-edited file. Returns `true` if it wrote, `false` if one already existed.
 /// Creates `home` if needed. (Called by `setup::init`.)
 pub fn write_default_config(home: &Path) -> Result<bool> {
-    let path = home.join(CONFIG_FILE);
-    if path.exists() {
-        return Ok(false);
-    }
     std::fs::create_dir_all(home).with_context(|| format!("create {home:?}"))?;
+    let path = home.join(CONFIG_FILE);
+    // `create_new` is race-free: it atomically fails if the file already exists,
+    // so a config created between a check and a write can never be clobbered.
+    let mut file = match OpenOptions::new().write(true).create_new(true).open(&path) {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Ok(false),
+        Err(e) => return Err(e).with_context(|| format!("create {path:?}")),
+    };
     let defaults = ConfigFile {
         voice: Some(DEFAULT_VOICE.to_string()),
         speed: Some(DEFAULT_SPEED),
         idle_timeout_minutes: Some(DEFAULT_IDLE_MINUTES),
     };
     let toml = toml::to_string(&defaults).context("serialize default config")?;
-    std::fs::write(&path, toml).with_context(|| format!("write {path:?}"))?;
+    file.write_all(toml.as_bytes())
+        .with_context(|| format!("write {path:?}"))?;
     Ok(true)
 }
 

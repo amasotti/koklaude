@@ -1,11 +1,17 @@
 //! Install/uninstall surgery on Claude Code's `~/.claude/settings.json`.
 //!
-//! Pure JSON transforms — no filesystem here (5d owns read + atomic write). Add
-//! or remove koklaude's Stop hook while preserving every other hook the user has.
-//! Verified schema (code.claude.com/docs hooks): `hooks.Stop` is an array of
-//! groups, each `{ "hooks": [ { "type": "command", "command": "…" } ] }`. Stop
-//! has **no `matcher`** — it fires unconditionally.
+//! Add or remove koklaude's Stop hook while preserving every other hook the user
+//! has. Verified schema (code.claude.com/docs hooks): `hooks.Stop` is an array of
+//! groups, each `{ "hooks": [ <entry> ] }`. We register the entry in **exec form**
+//! — `{ "type": "command", "command": "<abs path>", "args": ["hook"] }` — which
+//! Claude Code spawns directly with no shell, so a binary path containing spaces
+//! needs no quoting. Stop has **no `matcher`** — it fires unconditionally.
+//!
+//! Our hook is identified **structurally** (binary basename `koklaude` + args
+//! `["hook"]`), not by exact command string, so a re-install from a different
+//! path replaces rather than duplicates, and uninstall always finds it.
 
+use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -39,7 +45,12 @@ pub fn download(url: &str, dest: &Path) -> Result<()> {
         .with_context(|| format!("GET {url}"))?;
     let body = res.into_body();
     let total = body.content_length();
-    stream_to_file(body.into_reader(), dest, total)
+    let result = stream_to_file(body.into_reader(), dest, total);
+    if result.is_err() {
+        // A truncated/failed stream must not leave a stale `.part` lying around.
+        let _ = std::fs::remove_file(part_path(dest));
+    }
+    result
 }
 
 /// Stream `reader` into `dest` via a `.part` temp + atomic rename. Split out from
@@ -107,10 +118,11 @@ pub fn espeak_installed() -> bool {
         .is_ok_and(|s| s.success())
 }
 
-/// Add koklaude's Stop hook to `settings`, preserving existing hooks. Idempotent:
-/// if `command` is already registered under any Stop group, returns unchanged.
-/// Errors (rather than clobber) when `hooks`/`Stop` exist with the wrong shape.
-pub fn merge_stop_hook(mut settings: Value, command: &str) -> Result<Value> {
+/// Register koklaude's Stop hook for binary `exe`, preserving existing hooks.
+/// Idempotent and self-healing: strips any prior koklaude hook first (even one
+/// registered from a different path), so re-running never duplicates. Errors
+/// (rather than clobber) when `hooks`/`Stop` exist with the wrong shape.
+pub fn merge_stop_hook(mut settings: Value, exe: &Path) -> Result<Value> {
     let Value::Object(root) = &mut settings else {
         bail!("settings is not a JSON object");
     };
@@ -122,16 +134,17 @@ pub fn merge_stop_hook(mut settings: Value, command: &str) -> Result<Value> {
         Value::Array(a) => a,
         _ => bail!("`Stop` is present but is not a JSON array"),
     };
-    if !stop_contains(stop, command) {
-        stop.push(json!({ "hooks": [{ "type": "command", "command": command }] }));
-    }
+    strip_our_hooks(stop);
+    stop.push(hook_group(exe));
     Ok(settings)
 }
 
-/// Remove koklaude's Stop hook from `settings`, leaving every other hook intact.
-/// Strips `command` from each Stop group and cascade-cleans anything it empties
-/// (group → `Stop` → `hooks`), so `merge` then `remove` restores the original.
-pub fn remove_stop_hook(mut settings: Value, command: &str) -> Result<Value> {
+/// Remove koklaude's Stop hook(s) from `settings`, leaving every other hook intact.
+/// Matches **structurally** (binary basename `koklaude` + args `["hook"]`), so it
+/// finds our hook regardless of which path registered it. Cascade-cleans anything
+/// it empties (group → `Stop` → `hooks`), so `merge` then `remove` restores the
+/// original.
+pub fn remove_stop_hook(mut settings: Value) -> Result<Value> {
     let Value::Object(root) = &mut settings else {
         bail!("settings is not a JSON object");
     };
@@ -146,17 +159,7 @@ pub fn remove_stop_hook(mut settings: Value, command: &str) -> Result<Value> {
         Some(_) => bail!("`Stop` is present but is not a JSON array"),
     };
 
-    // Drop our command from every group; drop a group that ends up empty.
-    // Foreign group shapes are left untouched.
-    stop.retain_mut(|group| match group.get_mut("hooks") {
-        Some(Value::Array(inner)) => {
-            inner.retain(|h| h.get("command").and_then(Value::as_str) != Some(command));
-            !inner.is_empty()
-        }
-        _ => true,
-    });
-
-    // Cascade-clean emptied containers so an uninstall leaves no husk behind.
+    strip_our_hooks(stop);
     if stop.is_empty() {
         hooks.remove("Stop");
     }
@@ -166,18 +169,36 @@ pub fn remove_stop_hook(mut settings: Value, command: &str) -> Result<Value> {
     Ok(settings)
 }
 
-/// Is `command` already registered under any Stop group?
-fn stop_contains(stop: &[Value], command: &str) -> bool {
-    stop.iter().any(|group| {
-        group
-            .get("hooks")
-            .and_then(Value::as_array)
-            .is_some_and(|inner| {
-                inner
-                    .iter()
-                    .any(|h| h.get("command").and_then(Value::as_str) == Some(command))
-            })
-    })
+/// Drop every koklaude hook from each Stop group; drop a group left empty. Foreign
+/// group shapes are left untouched.
+fn strip_our_hooks(stop: &mut Vec<Value>) {
+    stop.retain_mut(|group| match group.get_mut("hooks") {
+        Some(Value::Array(inner)) => {
+            inner.retain(|h| !is_koklaude_hook(h));
+            !inner.is_empty()
+        }
+        _ => true,
+    });
+}
+
+/// A fresh Stop group registering `exe` in exec form (no shell → spaces safe).
+fn hook_group(exe: &Path) -> Value {
+    json!({ "hooks": [{ "type": "command", "command": exe.to_string_lossy(), "args": ["hook"] }] })
+}
+
+/// Is this inner hook entry one of ours? Identified by the binary's basename
+/// (`koklaude`) plus the `["hook"]` args — independent of the absolute path, so a
+/// move/reinstall can't orphan it.
+fn is_koklaude_hook(entry: &Value) -> bool {
+    let exe_is_koklaude = entry
+        .get("command")
+        .and_then(Value::as_str)
+        .is_some_and(|c| Path::new(c).file_name() == Some(OsStr::new("koklaude")));
+    let args_is_hook = entry
+        .get("args")
+        .and_then(Value::as_array)
+        .is_some_and(|a| a.len() == 1 && a.first().and_then(Value::as_str) == Some("hook"));
+    exe_is_koklaude && args_is_hook
 }
 
 // --- composition: `koklaude init` / `koklaude uninstall` -----------------
@@ -186,9 +207,10 @@ fn stop_contains(stop: &[Value], command: &str) -> bool {
 /// register the Stop hook → enable. Idempotent — re-running fills only what's
 /// missing (downloads skip, config is kept, the hook merge dedupes).
 pub fn init(cfg: &Config) -> Result<()> {
-    if !espeak_installed() {
+    let espeak = espeak_installed();
+    if !espeak {
         eprintln!("⚠ espeak-ng not on PATH — koklaude can't speak until it's installed:");
-        eprintln!("    brew install espeak-ng        # macOS");
+        eprintln!("    brew install espeak-ng         # macOS");
         eprintln!("    sudo apt-get install espeak-ng # Debian/Ubuntu");
     }
     std::fs::create_dir_all(&cfg.home).with_context(|| format!("create {:?}", cfg.home))?;
@@ -203,13 +225,18 @@ pub fn init(cfg: &Config) -> Result<()> {
         println!("kept existing config.toml");
     }
 
-    let command = hook_command()?;
+    let exe = std::env::current_exe().context("locate the koklaude binary")?;
     let settings = claude_settings_path()?;
-    rewrite_settings(&settings, |s| merge_stop_hook(s, &command))?;
+    rewrite_settings(&settings, |s| merge_stop_hook(s, &exe))?;
     println!("registered Stop hook in {}", settings.display());
 
     toggle::enable(&cfg.home)?;
-    println!("✓ koklaude ready — Claude will speak its replies.");
+    // Don't claim "ready" if the engine can't actually run.
+    if espeak {
+        println!("✓ koklaude ready — Claude will speak its replies.");
+    } else {
+        println!("✓ koklaude installed — install espeak-ng (above) to activate speech.");
+    }
     Ok(())
 }
 
@@ -217,19 +244,41 @@ pub fn init(cfg: &Config) -> Result<()> {
 /// hook intact. With `purge`, also delete the koklaude home (model, voices, config)
 /// — off by default, since re-downloading is expensive.
 pub fn uninstall(home: &Path, purge: bool) -> Result<()> {
-    let command = hook_command()?;
     let settings = claude_settings_path()?;
     if settings.exists() {
-        rewrite_settings(&settings, |s| remove_stop_hook(s, &command))?;
+        rewrite_settings(&settings, remove_stop_hook)?;
         println!("removed Stop hook from {}", settings.display());
     }
     toggle::disable(home)?;
-    if purge && home.exists() {
-        std::fs::remove_dir_all(home).with_context(|| format!("remove {home:?}"))?;
+    if purge {
+        purge_home(home)?;
         println!("purged {}", home.display());
     }
     println!("✓ koklaude uninstalled.");
     Ok(())
+}
+
+/// Delete the koklaude home — but **only** a directory whose final path component
+/// is exactly `koklaude`, and only if it's a real directory (not a symlink). This
+/// is a hard safety wall: no matter what the user points `$KOKLAUDE_HOME` at, we
+/// will never `remove_dir_all` a parent, a home dir, `/`, or a symlink's target.
+fn purge_home(home: &Path) -> Result<()> {
+    if home.file_name() != Some(OsStr::new("koklaude")) {
+        bail!(
+            "refusing to purge {home:?}: final path component must be exactly \"koklaude\" \
+             (delete it yourself if that's really what you want)"
+        );
+    }
+    match std::fs::symlink_metadata(home) {
+        Ok(m) if m.file_type().is_symlink() => {
+            bail!("refusing to purge {home:?}: it is a symlink, not a real directory");
+        }
+        Ok(m) if !m.is_dir() => bail!("refusing to purge {home:?}: not a directory"),
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()), // nothing to purge
+        Err(e) => return Err(e).with_context(|| format!("stat {home:?}")),
+    }
+    std::fs::remove_dir_all(home).with_context(|| format!("remove {home:?}"))
 }
 
 /// Path to Claude Code's `settings.json` — `$CLAUDE_CONFIG_DIR` or `~/.claude`.
@@ -243,13 +292,6 @@ fn claude_settings_path() -> Result<PathBuf> {
     Ok(dir.join("settings.json"))
 }
 
-/// The command we register as the Stop hook: this binary's absolute path + `hook`
-/// (so the hook works regardless of `$PATH`).
-fn hook_command() -> Result<String> {
-    let exe = std::env::current_exe().context("locate the koklaude binary")?;
-    Ok(format!("{} hook", exe.display()))
-}
-
 /// Read `path` (or `{}` if absent), apply `f`, write back atomically. A malformed
 /// existing file errors out rather than being clobbered.
 fn rewrite_settings(path: &Path, f: impl FnOnce(Value) -> Result<Value>) -> Result<()> {
@@ -259,7 +301,8 @@ fn rewrite_settings(path: &Path, f: impl FnOnce(Value) -> Result<Value>) -> Resu
         Err(e) => return Err(e).with_context(|| format!("read {path:?}")),
     };
     let updated = f(current)?;
-    let bytes = serde_json::to_vec_pretty(&updated).context("serialize settings")?;
+    let mut bytes = serde_json::to_vec_pretty(&updated).context("serialize settings")?;
+    bytes.push(b'\n'); // trailing newline — POSIX text file, no spurious git diff
     atomic_write(path, &bytes)
 }
 
@@ -279,7 +322,23 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
-    const CMD: &str = "koklaude hook";
+    const EXE: &str = "/usr/local/bin/koklaude";
+
+    /// Every koklaude hook entry across all Stop groups in `settings`.
+    fn our_hooks(settings: &Value) -> Vec<&Value> {
+        settings
+            .get("hooks")
+            .and_then(|h| h.get("Stop"))
+            .and_then(Value::as_array)
+            .map(|stop| {
+                stop.iter()
+                    .filter_map(|g| g.get("hooks").and_then(Value::as_array))
+                    .flatten()
+                    .filter(|h| is_koklaude_hook(h))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
 
     /// Per-test scratch dir under temp (no env mutation → no test races).
     fn scratch(tag: &str) -> PathBuf {
@@ -344,21 +403,21 @@ mod tests {
         let path = scratch("settings").join("settings.json");
         std::fs::write(&path, r#"{"model":"opus"}"#).unwrap();
 
-        rewrite_settings(&path, |s| merge_stop_hook(s, CMD)).unwrap();
+        rewrite_settings(&path, |s| merge_stop_hook(s, Path::new(EXE))).unwrap();
         let reg: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(reg["model"], "opus"); // unrelated keys preserved
-        assert!(stop_contains(reg["hooks"]["Stop"].as_array().unwrap(), CMD));
+        assert_eq!(our_hooks(&reg).len(), 1);
 
-        rewrite_settings(&path, |s| remove_stop_hook(s, CMD)).unwrap();
+        rewrite_settings(&path, remove_stop_hook).unwrap();
         let unreg: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(unreg, json!({ "model": "opus" })); // byte-restored
+        assert_eq!(unreg, json!({ "model": "opus" })); // semantically restored
     }
 
     #[test]
     fn rewrite_creates_file_when_absent() {
         let path = scratch("settings-new").join("settings.json");
         let _ = std::fs::remove_file(&path);
-        rewrite_settings(&path, |s| merge_stop_hook(s, CMD)).unwrap();
+        rewrite_settings(&path, |s| merge_stop_hook(s, Path::new(EXE))).unwrap();
         assert!(path.exists());
         assert!(!part_path(&path).exists()); // temp renamed away
     }
@@ -367,18 +426,20 @@ mod tests {
     fn rewrite_refuses_to_clobber_malformed_settings() {
         let path = scratch("settings-bad").join("settings.json");
         std::fs::write(&path, "not json {{{").unwrap();
-        assert!(rewrite_settings(&path, |s| merge_stop_hook(s, CMD)).is_err());
+        assert!(rewrite_settings(&path, |s| merge_stop_hook(s, Path::new(EXE))).is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "not json {{{"); // untouched
     }
 
     // --- merge -----------------------------------------------------------
 
     #[test]
-    fn merge_into_empty_settings() {
-        let got = merge_stop_hook(json!({}), CMD).unwrap();
+    fn merge_into_empty_settings_uses_exec_form() {
+        let got = merge_stop_hook(json!({}), Path::new(EXE)).unwrap();
         assert_eq!(
             got,
-            json!({ "hooks": { "Stop": [{ "hooks": [{ "type": "command", "command": CMD }] }] } })
+            json!({ "hooks": { "Stop": [{ "hooks": [
+                { "type": "command", "command": EXE, "args": ["hook"] }
+            ] }] } })
         );
     }
 
@@ -388,45 +449,67 @@ mod tests {
             "model": "opus",
             "hooks": { "PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "log.sh" }] }] }
         });
-        let got = merge_stop_hook(before, CMD).unwrap();
+        let got = merge_stop_hook(before, Path::new(EXE)).unwrap();
         assert_eq!(got["model"], "opus");
         assert!(got["hooks"]["PreToolUse"].is_array());
-        assert!(stop_contains(got["hooks"]["Stop"].as_array().unwrap(), CMD));
+        assert_eq!(our_hooks(&got).len(), 1);
     }
 
     #[test]
     fn merge_is_idempotent() {
-        let once = merge_stop_hook(json!({}), CMD).unwrap();
-        let twice = merge_stop_hook(once.clone(), CMD).unwrap();
+        let once = merge_stop_hook(json!({}), Path::new(EXE)).unwrap();
+        let twice = merge_stop_hook(once.clone(), Path::new(EXE)).unwrap();
         assert_eq!(once, twice);
-        assert_eq!(twice["hooks"]["Stop"].as_array().unwrap().len(), 1);
+        assert_eq!(our_hooks(&twice).len(), 1);
+    }
+
+    /// #3 regression: re-install from a *different* binary path must REPLACE the
+    /// old koklaude hook, never duplicate it (would make Claude speak twice).
+    #[test]
+    fn merge_reinstall_from_new_path_replaces_not_duplicates() {
+        let first = merge_stop_hook(json!({}), Path::new("/old/path/koklaude")).unwrap();
+        let second = merge_stop_hook(first, Path::new("/new/place/koklaude")).unwrap();
+        let ours = our_hooks(&second);
+        assert_eq!(ours.len(), 1, "exactly one koklaude hook after reinstall");
+        assert_eq!(ours[0]["command"], "/new/place/koklaude"); // the current path won
+    }
+
+    /// #2 regression: a binary path with spaces is stored verbatim (exec form,
+    /// no shell, no quoting) and still recognized as ours.
+    #[test]
+    fn merge_handles_binary_path_with_spaces() {
+        let exe = Path::new("/Users/some user/.cargo/bin/koklaude");
+        let got = merge_stop_hook(json!({}), exe).unwrap();
+        let ours = our_hooks(&got);
+        assert_eq!(ours.len(), 1);
+        assert_eq!(ours[0]["command"], "/Users/some user/.cargo/bin/koklaude");
+        assert_eq!(ours[0]["args"], json!(["hook"]));
     }
 
     #[test]
-    fn merge_appends_alongside_user_stop_hook() {
+    fn merge_keeps_a_foreign_stop_hook() {
         let before = json!({
             "hooks": { "Stop": [{ "hooks": [{ "type": "command", "command": "mine.sh" }] }] }
         });
-        let got = merge_stop_hook(before, CMD).unwrap();
+        let got = merge_stop_hook(before, Path::new(EXE)).unwrap();
         let stop = got["hooks"]["Stop"].as_array().unwrap();
-        assert_eq!(stop.len(), 2);
-        assert!(stop_contains(stop, CMD));
-        assert!(stop_contains(stop, "mine.sh"));
+        assert_eq!(stop.len(), 2); // foreign group + ours
+        assert_eq!(our_hooks(&got).len(), 1);
     }
 
     #[test]
     fn merge_errors_on_wrong_shapes() {
-        assert!(merge_stop_hook(json!(42), CMD).is_err());
-        assert!(merge_stop_hook(json!({ "hooks": 5 }), CMD).is_err());
-        assert!(merge_stop_hook(json!({ "hooks": { "Stop": 5 } }), CMD).is_err());
+        assert!(merge_stop_hook(json!(42), Path::new(EXE)).is_err());
+        assert!(merge_stop_hook(json!({ "hooks": 5 }), Path::new(EXE)).is_err());
+        assert!(merge_stop_hook(json!({ "hooks": { "Stop": 5 } }), Path::new(EXE)).is_err());
     }
 
     // --- remove ----------------------------------------------------------
 
     #[test]
     fn remove_cleans_up_completely() {
-        let with = merge_stop_hook(json!({}), CMD).unwrap();
-        let got = remove_stop_hook(with, CMD).unwrap();
+        let with = merge_stop_hook(json!({}), Path::new(EXE)).unwrap();
+        let got = remove_stop_hook(with).unwrap();
         assert_eq!(got, json!({})); // emptied group → Stop → hooks all pruned
     }
 
@@ -435,16 +518,24 @@ mod tests {
         let before = json!({
             "hooks": { "Stop": [{ "hooks": [{ "type": "command", "command": "mine.sh" }] }] }
         });
-        let with = merge_stop_hook(before.clone(), CMD).unwrap();
-        let got = remove_stop_hook(with, CMD).unwrap();
+        let with = merge_stop_hook(before.clone(), Path::new(EXE)).unwrap();
+        let got = remove_stop_hook(with).unwrap();
         assert_eq!(got, before); // user's hook survives untouched
+    }
+
+    /// #3 regression: remove finds our hook structurally, so a hook registered
+    /// from one path is removed even though no path/command is passed in.
+    #[test]
+    fn remove_is_orphan_proof_across_paths() {
+        let with = merge_stop_hook(json!({}), Path::new("/some/old/koklaude")).unwrap();
+        assert_eq!(remove_stop_hook(with).unwrap(), json!({}));
     }
 
     #[test]
     fn remove_is_noop_when_absent() {
         let settings = json!({ "hooks": { "PreToolUse": [] } });
-        assert_eq!(remove_stop_hook(settings.clone(), CMD).unwrap(), settings);
-        assert_eq!(remove_stop_hook(json!({}), CMD).unwrap(), json!({}));
+        assert_eq!(remove_stop_hook(settings.clone()).unwrap(), settings);
+        assert_eq!(remove_stop_hook(json!({})).unwrap(), json!({}));
     }
 
     #[test]
@@ -456,15 +547,72 @@ mod tests {
             json!({ "hooks": { "Stop": [{ "hooks": [{ "type": "command", "command": "mine.sh" }] }] } }),
         ] {
             let round =
-                remove_stop_hook(merge_stop_hook(original.clone(), CMD).unwrap(), CMD).unwrap();
+                remove_stop_hook(merge_stop_hook(original.clone(), Path::new(EXE)).unwrap())
+                    .unwrap();
             assert_eq!(round, original, "round-trip must restore the original");
         }
     }
 
     #[test]
     fn remove_errors_on_wrong_shapes() {
-        assert!(remove_stop_hook(json!(42), CMD).is_err());
-        assert!(remove_stop_hook(json!({ "hooks": 5 }), CMD).is_err());
-        assert!(remove_stop_hook(json!({ "hooks": { "Stop": 5 } }), CMD).is_err());
+        assert!(remove_stop_hook(json!(42)).is_err());
+        assert!(remove_stop_hook(json!({ "hooks": 5 })).is_err());
+        assert!(remove_stop_hook(json!({ "hooks": { "Stop": 5 } })).is_err());
+    }
+
+    // --- purge guard (the hard safety wall) ------------------------------
+
+    #[test]
+    fn purge_removes_a_real_koklaude_dir() {
+        let home = scratch("purge-ok").join("koklaude");
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(home.join("sub")).unwrap();
+        std::fs::write(home.join("kokoro-v1.0.onnx"), b"x").unwrap();
+        purge_home(&home).unwrap();
+        assert!(!home.exists());
+    }
+
+    #[test]
+    fn purge_refuses_dir_not_named_koklaude() {
+        let home = scratch("purge-bad").join("not-koklaude");
+        std::fs::create_dir_all(&home).unwrap();
+        assert!(purge_home(&home).is_err());
+        assert!(home.exists(), "must NOT delete a non-koklaude directory");
+    }
+
+    #[test]
+    fn purge_refuses_home_root_and_parents() {
+        // Final component is the user's home / a parent — never koklaude → refused.
+        assert!(purge_home(Path::new("/Users/toni")).is_err());
+        assert!(purge_home(Path::new("/")).is_err());
+        assert!(purge_home(Path::new("/Users/toni/.config")).is_err());
+    }
+
+    #[test]
+    fn purge_is_noop_when_absent() {
+        let home = scratch("purge-absent").join("koklaude");
+        let _ = std::fs::remove_dir_all(&home);
+        purge_home(&home).unwrap(); // nothing to remove → Ok
+    }
+
+    /// Even if a symlink is *named* `koklaude`, we must not follow it and nuke
+    /// its target.
+    #[cfg(unix)]
+    #[test]
+    fn purge_refuses_symlink_named_koklaude() {
+        let base = scratch("purge-symlink");
+        let target = base.join("precious");
+        let _ = std::fs::remove_dir_all(&target);
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("keep.txt"), b"keep").unwrap();
+        let link = base.join("koklaude");
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        assert!(purge_home(&link).is_err());
+        assert!(
+            target.join("keep.txt").exists(),
+            "symlink target must survive"
+        );
     }
 }

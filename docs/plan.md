@@ -97,6 +97,21 @@ Carried into Phase 6: pick a good default voice; the README "Install & use".
 - Voice + speed config; pick a good default voice.
 - Short demo (asciinema / audio clip).
 
+> **Working subslices (temporary — delete when Phase 6 ships).** Voice+speed config
+> already landed in Phase 3 (`config` + `say --voice/--speed`); what's left of that
+> bullet is just the default. Release scope decided: macOS prebuilt binary + `cargo
+> install` (playback is `afplay`/macOS-only today). Order: S1 → (S2, S4); S3 standalone.
+>
+> - **S1 — Default voice.** Pick the built-in default (candidate `af_heart`, Kokoro's
+>   reference). Needs a listening pass; wire the winner as the default in `config` +
+>   `setup`, update docs. Unblocks honest README/demo.
+> - **S2 — README truth pass.** Drop the "early / design phase — nothing works end-to-end"
+>   banner; un-"(planned)" Install & use; state that init/daemon/hook work. Docs only.
+> - **S3 — Release pipeline (macOS).** GH Actions on tag → build `aarch64-apple-darwin`
+>   (maybe also x86_64) and attach to a GH release; document the `cargo install` path.
+> - **S4 — Demo.** asciinema cast + a sample audio clip, linked from the README
+>   (Toni records; Claude scripts + embeds).
+
 ## Later (post-1.0)
 - **Extract `hanasu`** to its own repo (`git subtree split`) and publish to
   crates.io — the maintained Kokoro engine on `ort` 2.0 the ecosystem is missing
