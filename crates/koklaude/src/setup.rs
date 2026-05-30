@@ -8,10 +8,90 @@
 // Unwired until 5d composes `init`/`uninstall`; drop this then.
 #![allow(dead_code)]
 
+use std::fs::File;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
+
+/// Release assets to fetch — kokoro-onnx `model-files-v1.0`; see
+/// docs/prerequisites.md. (5d pairs each with its `Config` dest path.)
+pub const MODEL_URL: &str =
+    "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx";
+pub const VOICES_URL: &str =
+    "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin";
+
+const DOWNLOAD_BUF: usize = 64 * 1024;
+/// Redraw the stderr progress line roughly every this many bytes.
+const PROGRESS_STEP: u64 = 8 * 1024 * 1024;
+
+/// Download `url` to `dest`. Skips if `dest` already exists non-empty (re-download
+/// is expensive). Streams to a `<dest>.part` sibling then renames on success — an
+/// interrupted download never leaves a truncated file at `dest`. Progress → stderr.
+pub fn download(url: &str, dest: &Path) -> Result<()> {
+    if dest.metadata().is_ok_and(|m| m.len() > 0) {
+        eprintln!("  {} present — skipping", dest.display());
+        return Ok(());
+    }
+    let res = ureq::get(url).call().with_context(|| format!("GET {url}"))?;
+    let body = res.into_body();
+    let total = body.content_length();
+    stream_to_file(body.into_reader(), dest, total)
+}
+
+/// Stream `reader` into `dest` via a `.part` temp + atomic rename. Split out from
+/// `download` so the file plumbing is testable without a network round-trip.
+fn stream_to_file(mut reader: impl Read, dest: &Path, total: Option<u64>) -> Result<()> {
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("create {parent:?}"))?;
+    }
+    let part = part_path(dest);
+    let name = dest.file_name().and_then(|s| s.to_str()).unwrap_or("file");
+
+    let mut file = File::create(&part).with_context(|| format!("create {part:?}"))?;
+    let mut buf = vec![0u8; DOWNLOAD_BUF];
+    let (mut done, mut drawn): (u64, u64) = (0, 0);
+    loop {
+        let n = reader.read(&mut buf).context("read download stream")?;
+        if n == 0 {
+            break;
+        }
+        file.write_all(&buf[..n]).with_context(|| format!("write {part:?}"))?;
+        done += n as u64;
+        if done - drawn >= PROGRESS_STEP {
+            draw_progress(name, done, total);
+            drawn = done;
+        }
+    }
+    file.sync_all().with_context(|| format!("flush {part:?}"))?;
+    drop(file);
+    draw_progress(name, done, total);
+    eprintln!();
+
+    std::fs::rename(&part, dest).with_context(|| format!("rename {part:?} -> {dest:?}"))
+}
+
+/// `<dest>.part` — append, don't replace the extension (`x.onnx` → `x.onnx.part`).
+fn part_path(dest: &Path) -> PathBuf {
+    let mut p = dest.as_os_str().to_owned();
+    p.push(".part");
+    PathBuf::from(p)
+}
+
+fn draw_progress(name: &str, done: u64, total: Option<u64>) {
+    let mb = |b: u64| b as f64 / (1024.0 * 1024.0);
+    match total {
+        Some(t) if t > 0 => eprint!(
+            "\r  {name}: {:.1} / {:.1} MB ({:.0}%)",
+            mb(done),
+            mb(t),
+            done as f64 / t as f64 * 100.0
+        ),
+        _ => eprint!("\r  {name}: {:.1} MB", mb(done)),
+    }
+}
 
 /// Is `espeak-ng` on PATH? koklaude shells out to it for g2p (decisions D3), so
 /// `init` checks this up front and prints the `brew install espeak-ng` hint when
@@ -101,8 +181,45 @@ fn stop_contains(stop: &[Value], command: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
 
     const CMD: &str = "koklaude hook";
+
+    /// Per-test scratch dir under temp (no env mutation → no test races).
+    fn scratch(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("koklaude-setup-{tag}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    // --- download plumbing (no network) ----------------------------------
+
+    #[test]
+    fn part_path_appends_not_replaces_extension() {
+        assert_eq!(
+            part_path(Path::new("/a/kokoro-v1.0.onnx")),
+            PathBuf::from("/a/kokoro-v1.0.onnx.part")
+        );
+    }
+
+    #[test]
+    fn stream_writes_content_and_renames_part_away() {
+        let dest = scratch("stream").join("asset.bin");
+        let _ = std::fs::remove_file(&dest);
+        let data = b"hello kokoro".to_vec();
+        stream_to_file(Cursor::new(data.clone()), &dest, None).unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), data);
+        assert!(!part_path(&dest).exists(), ".part must be renamed away on success");
+    }
+
+    #[test]
+    fn download_skips_when_dest_present() {
+        let dest = scratch("skip").join("present.bin");
+        std::fs::write(&dest, b"x").unwrap();
+        // Bogus URL: if the skip works, it's never fetched, so this can't error.
+        download("http://invalid.invalid/nope", &dest).unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), b"x");
+    }
 
     // --- merge -----------------------------------------------------------
 
