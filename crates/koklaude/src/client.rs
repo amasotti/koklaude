@@ -19,9 +19,11 @@ use crate::ipc;
 
 /// Poll the freshly-spawned daemon this many times, this far apart, before
 /// giving up. The daemon binds the socket *before* loading the model, so it
-/// becomes connectable fast; the request then buffers until the engine is warm.
-const RETRIES: u32 = 50;
-const INTERVAL: Duration = Duration::from_millis(100);
+/// becomes connectable within a few ms; the request then buffers until the
+/// engine is warm. 1s total is generous — and bounds how long a broken install
+/// (daemon never binds) can stall the hook, honouring "never block Claude Code".
+const RETRIES: u32 = 20;
+const INTERVAL: Duration = Duration::from_millis(50);
 
 /// Send `text` to the daemon at `socket`, spawning it if not yet running.
 pub fn send(socket: &Path, text: &str) -> Result<()> {

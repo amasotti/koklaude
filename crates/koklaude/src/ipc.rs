@@ -5,18 +5,17 @@
 //! length prefix, no delimiter — EOF *is* the frame boundary (one request per
 //! connection, so there's nothing to disambiguate). Fire-and-forget: no reply.
 
-// Used by the daemon + client (4b/4d) — remove this allow when wired.
-#![allow(dead_code)]
-
 use std::io::{Read, Write};
 use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
-use std::path::Path;
 
 use anyhow::{Context, Result};
 
-/// Send `text` to the daemon at `socket`: connect, write, half-close.
-pub fn send(socket: &Path, text: &str) -> Result<()> {
+/// Connect to the daemon at `socket` and send `text` (connect + `write_request`).
+/// Test-only: the real client (`client::send`) connects itself so it can classify
+/// "no daemon" connect errors, then calls `write_request` directly.
+#[cfg(test)]
+pub fn send(socket: &std::path::Path, text: &str) -> Result<()> {
     let mut stream = UnixStream::connect(socket).with_context(|| format!("connect {socket:?}"))?;
     write_request(&mut stream, text)
 }
