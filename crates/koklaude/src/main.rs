@@ -2,6 +2,7 @@
 //!
 
 mod clean;
+mod client;
 mod config;
 mod daemon;
 mod ipc;

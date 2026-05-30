@@ -18,11 +18,14 @@ use anyhow::{Context, Result};
 /// Send `text` to the daemon at `socket`: connect, write, half-close.
 pub fn send(socket: &Path, text: &str) -> Result<()> {
     let mut stream = UnixStream::connect(socket).with_context(|| format!("connect {socket:?}"))?;
+    write_request(&mut stream, text)
+}
+
+/// Write one request on an already-connected stream: bytes + half-close. The
+/// client connects itself (to classify "no daemon" errors), then writes here.
+pub fn write_request(stream: &mut UnixStream, text: &str) -> Result<()> {
     stream.write_all(text.as_bytes()).context("write request")?;
-    stream
-        .shutdown(Shutdown::Write)
-        .context("half-close write")?;
-    Ok(())
+    stream.shutdown(Shutdown::Write).context("half-close write")
 }
 
 /// Read one request to EOF from an accepted connection.
