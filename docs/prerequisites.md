@@ -24,7 +24,7 @@ espeak-ng --version
 
 ## 2. The Kokoro model + voices
 
-Both live under `~/.claude/koklaude/` (koklaude's runtime home — see
+Both live under `~/.config/koklaude/` (koklaude's runtime home — see
 `docs/architecture.md`) and are **not** committed to the repo.
 
 | File | What | Size |
@@ -33,8 +33,8 @@ Both live under `~/.claude/koklaude/` (koklaude's runtime home — see
 | `voices-v1.0.bin` | 54 voice style vectors (npz) | ~28 MB |
 
 ```sh
-mkdir -p ~/.claude/koklaude
-cd ~/.claude/koklaude
+mkdir -p ~/.config/koklaude
+cd ~/.config/koklaude
 
 # Source: thewh1teagle/kokoro-onnx release `model-files-v1.0`.
 curl -fL -o kokoro-v1.0.onnx \
@@ -46,7 +46,7 @@ curl -fL -o voices-v1.0.bin \
 **See list of voices**:
 
 ```bash
-unzip -l ~/.claude/koklaude/voices-v1.0.bin | grep -o '[a-z][a-z]_[a-z]*'
+unzip -l ~/.config/koklaude/voices-v1.0.bin | grep -o '[a-z][a-z]_[a-z]*'
 ```
 
 ## 3. Build toolchain

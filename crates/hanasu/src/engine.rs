@@ -119,7 +119,7 @@ mod tests {
     #[test]
     fn synth_hello_world_is_audible() {
         let dir = match std::env::var("HOME") {
-            Ok(home) => PathBuf::from(home).join(".claude/koklaude"),
+            Ok(home) => PathBuf::from(home).join(".config/koklaude"),
             Err(_) => return,
         };
         let model = dir.join("kokoro-v1.0.onnx");

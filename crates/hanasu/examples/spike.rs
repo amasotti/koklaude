@@ -22,8 +22,8 @@
 //! Prereqs (see docs/spike.md):
 //!   * `espeak-ng` on PATH        (macOS: `brew install espeak-ng`)
 //!   * `unzip` on PATH            (ships with macOS/most Linux)
-//!   * ~/.claude/koklaude/kokoro-v1.0.onnx
-//!   * ~/.claude/koklaude/voices-v1.0.bin
+//!   * ~/.config/koklaude/kokoro-v1.0.onnx
+//!   * ~/.config/koklaude/voices-v1.0.bin
 //!
 //! Run (defaults: voice `af_heart`, text "Hello world"):
 //!   cargo run -p hanasu --example spike
@@ -72,7 +72,7 @@ const VOCAB: &[(char, i64)] = &[
 const KNOWN_HELLO_WORLD: &[i64] = &[50, 83, 54, 156, 57, 135, 16, 65, 156, 87, 158, 54, 46];
 
 fn koklaude_dir() -> PathBuf {
-    PathBuf::from(std::env::var("HOME").expect("HOME not set")).join(".claude/koklaude")
+    PathBuf::from(std::env::var("HOME").expect("HOME not set")).join(".config/koklaude")
 }
 
 /// Link A: text → IPA phonemes, via the `espeak-ng` CLI (g2p fixed to en-us).

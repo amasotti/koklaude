@@ -4,6 +4,7 @@
 mod clean;
 mod config;
 mod playback;
+mod toggle;
 mod transcript;
 
 use anyhow::Context;
@@ -52,8 +53,16 @@ fn main() -> anyhow::Result<()> {
         Command::Init => todo!("init: download model + register Stop hook"),
         Command::Daemon => todo!("daemon: warm model + unix socket + play queue"),
         Command::Hook => todo!("hook: parse transcript -> clean -> daemon"),
-        Command::On => todo!("on: create enabled flag"),
-        Command::Off => todo!("off: remove enabled flag"),
+        Command::On => {
+            toggle::enable(&config::home())?;
+            println!("speech enabled");
+            Ok(())
+        }
+        Command::Off => {
+            toggle::disable(&config::home())?;
+            println!("speech disabled");
+            Ok(())
+        }
         Command::Say { text, voice, speed } => say(&text, voice, speed),
     }
 }
@@ -70,7 +79,7 @@ fn say(text: &str, voice: Option<String>, speed: Option<f32>) -> anyhow::Result<
         cfg.speed = s;
     }
     let engine = Engine::load(&cfg.model_path(), &cfg.voices_path(), &cfg.voice, cfg.speed)
-        .context("load engine (is the model present under ~/.claude/koklaude/?)")?;
+        .context("load engine (is the model present under ~/.config/koklaude/?)")?;
     let audio = engine.synth(text).context("synthesize text")?;
     playback::play(&audio)
 }

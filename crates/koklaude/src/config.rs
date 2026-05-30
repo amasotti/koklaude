@@ -1,6 +1,6 @@
 //! Runtime configuration: where the model/voices live and how to speak.
 //!
-//! Voice + speed come from `~/.claude/koklaude/config.toml` if present, else
+//! Voice + speed come from `~/.config/koklaude/config.toml` if present, else
 //! built-in defaults. Phase 5 `init` *writes* that file (install params); here
 //! we only *read* it. CLI flags (`say --voice/--speed`) override per-call.
 
@@ -70,13 +70,18 @@ impl ConfigFile {
     }
 }
 
-/// `$KOKLAUDE_HOME` if set, else `~/.claude/koklaude`.
+/// The koklaude home directory (no config-file parsing — just the path).
+pub fn home() -> PathBuf {
+    default_home()
+}
+
+/// `$KOKLAUDE_HOME` if set, else `~/.config/koklaude`.
 fn default_home() -> PathBuf {
     if let Ok(dir) = std::env::var(HOME_ENV) {
         return PathBuf::from(dir);
     }
     let home = std::env::var("HOME").expect("HOME not set");
-    PathBuf::from(home).join(".claude/koklaude")
+    PathBuf::from(home).join(".config/koklaude")
 }
 
 #[cfg(test)]
