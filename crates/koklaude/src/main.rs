@@ -4,6 +4,7 @@
 mod clean;
 mod config;
 mod playback;
+mod transcript;
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
