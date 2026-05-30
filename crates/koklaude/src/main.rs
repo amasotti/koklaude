@@ -3,6 +3,7 @@
 
 mod clean;
 mod config;
+mod daemon;
 mod ipc;
 mod playback;
 mod toggle;
@@ -52,7 +53,7 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Command::Init => todo!("init: download model + register Stop hook"),
-        Command::Daemon => todo!("daemon: warm model + unix socket + play queue"),
+        Command::Daemon => daemon::run(&Config::load()?),
         Command::Hook => todo!("hook: parse transcript -> clean -> daemon"),
         Command::On => {
             toggle::enable(&config::home())?;

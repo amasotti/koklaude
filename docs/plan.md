@@ -76,10 +76,11 @@ and client (engine-bound, model-gated) follow.
   synth→plays serially (reuses `playback::play`). Accept loop reads each
   connection via `ipc::recv` and pushes onto the queue; a slow playback never
   blocks accept. No idle-exit yet. Model-gated smoke test (like `say`).
-- **4c — idle shutdown.** Worker uses `recv_timeout(IDLE)`; on timeout the daemon
-  exits to free RAM (const `IDLE = 30 min`; config wiring deferred — YAGNI).
-  Clean up the socket file on exit so the next spawn binds fresh. Test the
-  timeout path with a short override (no model needed).
+- **4c — idle shutdown.** Worker uses `recv_timeout(idle)`; on timeout the daemon
+  exits to free RAM (`idle_timeout_minutes` in `config.toml`, default 30; Phase 5
+  `init` writes it). Clean up the socket file on exit, and recover a stale socket
+  on startup (probe-connect: refused = unlink+rebind, live = bail) so a killed
+  daemon self-heals on next launch. Test the timeout + bind paths (no model).
 - **4d — `client` (connect or spawn).** `connect-or-spawn`: try `ipc::send`; on
   `NotFound`/`ConnectionRefused` (no daemon, or stale socket from a crash),
   spawn `koklaude daemon` **detached** (own session/process group so it outlives

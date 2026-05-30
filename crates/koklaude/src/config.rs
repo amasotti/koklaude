@@ -5,6 +5,7 @@
 //! we only *read* it. CLI flags (`say --voice/--speed`) override per-call.
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
@@ -20,12 +21,15 @@ const SOCKET_FILE: &str = "daemon.sock";
 /// Provisional default voice — plan's "best default voice" is still open.
 const DEFAULT_VOICE: &str = "af_heart";
 const DEFAULT_SPEED: f32 = 1.0;
+/// Free the warm model after this long with no replies (decisions D8).
+const DEFAULT_IDLE_MINUTES: u64 = 30;
 
 /// Resolved runtime config.
 pub struct Config {
     pub home: PathBuf,
     pub voice: String,
     pub speed: f32,
+    pub idle_timeout: Duration,
 }
 
 /// The on-disk config file. Every field optional → omitted = default.
@@ -34,6 +38,7 @@ pub struct Config {
 struct ConfigFile {
     voice: Option<String>,
     speed: Option<f32>,
+    idle_timeout_minutes: Option<u64>,
 }
 
 impl Config {
@@ -42,9 +47,11 @@ impl Config {
     pub fn load() -> Result<Self> {
         let home = default_home();
         let file = ConfigFile::read(&home)?;
+        let idle_minutes = file.idle_timeout_minutes.unwrap_or(DEFAULT_IDLE_MINUTES);
         Ok(Self {
             voice: file.voice.unwrap_or_else(|| DEFAULT_VOICE.to_string()),
             speed: file.speed.unwrap_or(DEFAULT_SPEED),
+            idle_timeout: Duration::from_secs(idle_minutes * 60),
             home,
         })
     }
@@ -58,8 +65,6 @@ impl Config {
     }
 
     /// Unix socket the daemon binds and the hook client connects to.
-    // Used by daemon + client (4b/4d) — remove this allow when wired.
-    #[allow(dead_code)]
     pub fn socket_path(&self) -> PathBuf {
         self.home.join(SOCKET_FILE)
     }
@@ -128,6 +133,14 @@ mod tests {
         let file = ConfigFile::read(&dir).unwrap();
         assert!(file.voice.is_none());
         assert_eq!(file.speed, Some(0.8));
+    }
+
+    #[test]
+    fn parses_idle_timeout() {
+        let dir = scratch("idle");
+        std::fs::write(dir.join(CONFIG_FILE), "idle_timeout_minutes = 5\n").unwrap();
+        let file = ConfigFile::read(&dir).unwrap();
+        assert_eq!(file.idle_timeout_minutes, Some(5));
     }
 
     #[test]
