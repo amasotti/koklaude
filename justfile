@@ -19,8 +19,11 @@ test:
 fmt:
     cargo fmt --all
 
-# Phase 1 engine spike: synth "Hello world" → /tmp/koklaude-spike.wav, then play.
-# Needs ~/.claude/koklaude/{kokoro-v1.0.onnx,af_heart.npy}.
-spike:
-    cargo run -p hanasu --example spike
+# Phase 1 engine spike: text → phonemes → tokens → audio, then play.
+# Needs ~/.claude/koklaude/{kokoro-v1.0.onnx,voices-v1.0.bin} + espeak-ng + unzip.
+# Defaults to voice `af_heart`, text "Hello world". Examples:
+#   just spike
+#   just spike bm_george "Good evening"
+spike voice="af_heart" text="Hello world":
+    cargo run -p hanasu --example spike -- {{voice}} {{text}}
     afplay /tmp/koklaude-spike.wav
