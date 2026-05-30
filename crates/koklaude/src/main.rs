@@ -1,6 +1,8 @@
 //! koklaude — local, offline text-to-speech for Claude Code.
 //!
 
+mod config;
+
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
