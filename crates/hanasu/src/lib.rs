@@ -12,6 +12,7 @@
 
 mod engine;
 mod error;
+mod voice;
 
 pub use engine::{Audio, Engine};
 pub use error::{Error, Result};

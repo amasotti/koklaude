@@ -11,6 +11,7 @@ license.workspace = true
 ort = { version = "2.0.0-rc.12", features = ["download-binaries"] }
 # Typed engine errors — no `Box<dyn Error>` in the public API.
 thiserror = "2"
+zip = { version = "8.6.0", default-features = false }
 
 [dev-dependencies]
 # The Phase 1 spike (examples/spike.rs) encodes a WAV to play; the engine itself
