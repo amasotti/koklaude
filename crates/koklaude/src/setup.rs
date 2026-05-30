@@ -8,8 +8,22 @@
 // Unwired until 5d composes `init`/`uninstall`; drop this then.
 #![allow(dead_code)]
 
+use std::process::{Command, Stdio};
+
 use anyhow::{Result, bail};
 use serde_json::{Value, json};
+
+/// Is `espeak-ng` on PATH? koklaude shells out to it for g2p (decisions D3), so
+/// `init` checks this up front and prints the `brew install espeak-ng` hint when
+/// it's missing. Output is silenced — we only care about the exit status.
+pub fn espeak_installed() -> bool {
+    Command::new("espeak-ng")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
 
 /// Add koklaude's Stop hook to `settings`, preserving existing hooks. Idempotent:
 /// if `command` is already registered under any Stop group, returns unchanged.

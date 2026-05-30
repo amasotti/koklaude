@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Env var to override the koklaude home (used by tests).
 const HOME_ENV: &str = "KOKLAUDE_HOME";
@@ -33,7 +33,7 @@ pub struct Config {
 }
 
 /// The on-disk config file. Every field optional → omitted = default.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ConfigFile {
     voice: Option<String>,
@@ -68,6 +68,26 @@ impl Config {
     pub fn socket_path(&self) -> PathBuf {
         self.home.join(SOCKET_FILE)
     }
+}
+
+/// Write a default `config.toml` under `home`, **only if absent** — never clobber
+/// a user-edited file. Returns `true` if it wrote, `false` if one already existed.
+/// Creates `home` if needed. (`init` calls this; 5d wires it.)
+#[allow(dead_code)] // unwired until 5d composes `init`
+pub fn write_default_config(home: &Path) -> Result<bool> {
+    let path = home.join(CONFIG_FILE);
+    if path.exists() {
+        return Ok(false);
+    }
+    std::fs::create_dir_all(home).with_context(|| format!("create {home:?}"))?;
+    let defaults = ConfigFile {
+        voice: Some(DEFAULT_VOICE.to_string()),
+        speed: Some(DEFAULT_SPEED),
+        idle_timeout_minutes: Some(DEFAULT_IDLE_MINUTES),
+    };
+    let toml = toml::to_string(&defaults).context("serialize default config")?;
+    std::fs::write(&path, toml).with_context(|| format!("write {path:?}"))?;
+    Ok(true)
 }
 
 impl ConfigFile {
@@ -155,5 +175,25 @@ mod tests {
         let dir = scratch("unknown");
         std::fs::write(dir.join(CONFIG_FILE), "voce = \"typo\"\n").unwrap();
         assert!(ConfigFile::read(&dir).is_err());
+    }
+
+    #[test]
+    fn writes_default_when_absent() {
+        let dir = scratch("write-new");
+        let _ = std::fs::remove_file(dir.join(CONFIG_FILE));
+        assert!(write_default_config(&dir).unwrap());
+        // What we wrote must round-trip back to the defaults.
+        let file = ConfigFile::read(&dir).unwrap();
+        assert_eq!(file.voice.as_deref(), Some(DEFAULT_VOICE));
+        assert_eq!(file.speed, Some(DEFAULT_SPEED));
+        assert_eq!(file.idle_timeout_minutes, Some(DEFAULT_IDLE_MINUTES));
+    }
+
+    #[test]
+    fn does_not_clobber_existing_config() {
+        let dir = scratch("write-keep");
+        std::fs::write(dir.join(CONFIG_FILE), "voice = \"am_adam\"\n").unwrap();
+        assert!(!write_default_config(&dir).unwrap());
+        assert_eq!(ConfigFile::read(&dir).unwrap().voice.as_deref(), Some("am_adam"));
     }
 }
