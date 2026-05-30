@@ -92,8 +92,17 @@ text-to-speech command in its own right (and how we validate the engine).
 koklaude say "Local, offline text to speech in one command."
 ```
 
-Voice and speed will be configurable — globally via `~/.claude/koklaude/config.toml`
-(written by `koklaude init`) and per-call via `say --voice <name> --speed <n>`.
+Voice and speed are configurable — globally via `~/.claude/koklaude/config.toml`,
+and per-call via `say --voice <name> --speed <n>` (a flag overrides the file).
+
+```toml
+# ~/.claude/koklaude/config.toml — both keys optional; omitted = built-in default
+voice = "af_heart"   # any of the 54 Kokoro voices (e.g. am_adam, bf_emma)
+speed = 1.0          # pace multiplier; 1.0 = normal
+```
+
+The file is read today; `koklaude init` will write it for you (Phase 5). Precedence:
+`--flag` > `config.toml` > built-in default.
 
 ### Prerequisites
 
