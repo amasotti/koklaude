@@ -398,6 +398,7 @@ dependencies = [
  "clap",
  "dirs",
  "hanasu",
+ "hound",
  "serde",
  "serde_json",
  "toml",

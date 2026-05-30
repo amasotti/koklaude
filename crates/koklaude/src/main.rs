@@ -2,8 +2,12 @@
 //!
 
 mod config;
+mod playback;
 
+use anyhow::Context;
 use clap::{Parser, Subcommand};
+use config::Config;
+use hanasu::Engine;
 
 #[derive(Parser)]
 #[command(
@@ -32,7 +36,7 @@ enum Command {
     Say { text: String },
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Command::Init => todo!("init: download model + register Stop hook"),
@@ -40,6 +44,16 @@ fn main() {
         Command::Hook => todo!("hook: parse transcript -> clean -> daemon"),
         Command::On => todo!("on: create enabled flag"),
         Command::Off => todo!("off: remove enabled flag"),
-        Command::Say { text } => todo!("say: speak {text:?}"),
+        Command::Say { text } => say(&text),
     }
+}
+
+/// Synthesize `text` with the configured engine and play it. No daemon —
+/// loads the model fresh each call (a manual test path, not the hot path).
+fn say(text: &str) -> anyhow::Result<()> {
+    let cfg = Config::load();
+    let engine = Engine::load(&cfg.model_path(), &cfg.voices_path(), &cfg.voice, cfg.speed)
+        .context("load engine (is the model present under ~/.claude/koklaude/?)")?;
+    let audio = engine.synth(text).context("synthesize text")?;
+    playback::play(&audio)
 }

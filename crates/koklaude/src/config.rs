@@ -3,9 +3,6 @@
 //! Phase 3 = paths + in-code defaults only. File persistence lands with
 //! Phase 5 `init` (see docs/plan.md).
 
-// Unused until slice 3b wires `say` to these — remove then.
-#![allow(dead_code)]
-
 use std::path::PathBuf;
 
 /// Env var to override the koklaude home (used by tests).
