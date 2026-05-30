@@ -1,0 +1,11 @@
+[package]
+name = "hanasu"
+description = "A small Rust text-to-speech engine running the Kokoro-82M model via ONNX (ort + espeak-ng)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# Engine dependencies (ort, espeak-rs, audio) are added when we implement the
+# pipeline — see ../../docs/plan.md. Kept empty until then so the workspace
+# builds cleanly during scaffolding.

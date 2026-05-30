@@ -1,0 +1,21 @@
+# Rust
+/target
+**/*.rs.bk
+Cargo.lock.orig
+
+# Model artifacts (downloaded by `koklaude init`, never committed — large)
+*.onnx
+*.bin
+
+# Audio scratch
+*.wav
+
+# macOS
+.DS_Store
+
+# Local env
+*.log
+
+## IDE
+.idea/
+.vscode/
