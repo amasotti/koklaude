@@ -25,37 +25,16 @@ maintained foundation — `hanasu`, the in-process successor to the dead `kokoro
 on `ort` 2.0 — which the ecosystem is missing.
 
 ## D3 — Phonemization via `espeak-ng` (CLI)
-**Decision:** Use `espeak-ng` for grapheme→phoneme, invoked as an **external CLI**
-(`espeak-ng -q --ipa`), **not** via the `espeak-rs` static-linked bindings. `ort`
-2.0 (pykeio, actively maintained) for ONNX inference.
-*Updated:* originally specified the `espeak-rs` bindings; switched to the CLI in
-Phase 1/2 — proven in the spike, zero build/link risk, and it changes the license
-footing (see Consequence).
-
-**Why espeak at all:** Kokoro consumes phonemes, not text, so something must do
-G2P, and it has to be good. The intended users write **non-native English, dense
-with domain jargon and coding-assistant vocabulary** — exactly the words a fixed
-embedded dictionary does *not* contain. `espeak-ng` phonemizes arbitrary words and
-many languages; it's the backend Kokoro's own reference pipeline uses.
-
-**Why not a pure-Rust dictionary G2P (`misaki-rs`) — tested, not assumed:** A Phase
-1.5 spike compared `misaki-rs` (espeak-free, MIT) against the espeak CLI on a
-representative workload. misaki spelled the words that matter most **letter by
-letter** — `Kubernetes` → "K-U-B-E-R-N-E-T-E-S", likewise `OAuth`, `stdout`,
-`PostgreSQL` — and did so *silently* (no unknown marker, so garbage would ship
-unnoticed). Common words and numbers matched espeak. This confirms the original
-concern: dictionary-only G2P is unusable for coding/jargon text. (`misaki-rs` *with*
-its `espeak` feature is a full Misaki port and a viable **Phase 2** g2p candidate —
-better quality than raw espeak — but it pulls `espeak-rs`, the binding we avoided.)
-
-**Consequence (license — reopens the GPL choice):** espeak-ng is now a **separate
-program we exec**, not a statically linked library. Arm's-length CLI invocation is
-generally *not* a derivative work — which **removes the static-linking basis for
-GPL-3.0** that the project assumed. So koklaude/hanasu are **not necessarily forced
-to GPL**; a permissive license (MIT/Apache) may be viable while still requiring the
-user to have `espeak-ng` installed (which `koklaude init` checks for / hints).
-**To be decided deliberately** — this supersedes the earlier "GPL because static
-link" stance. Not legal advice.
+**Decision:** Phonemize with `espeak-ng`, invoked as an **external CLI**
+(`espeak-ng -q --ipa`) — not the `espeak-rs` bindings. `ort` 2.0 for ONNX inference.
+**Why espeak:** Kokoro needs phonemes, and users write jargon/code/non-native
+English — words a fixed dictionary lacks. A spike confirmed the pure-Rust
+`misaki-rs` (espeak-free) spells such words letter-by-letter (`Kubernetes` →
+"K-U-B-E-R-N-E-T-E-S"; same for `OAuth`, `stdout`, `PostgreSQL`), silently;
+espeak handles arbitrary words. (`misaki-rs` *with* its espeak feature remains a
+Phase 2 g2p option — better quality, but re-links espeak.)
+**Why CLI, not bindings:** simpler, zero build/link risk, and it keeps the project
+**license-free of GPL** — see D4.
 
 ## D4 — Cargo workspace, two crates
 **Decision:** `crates/hanasu` (pure engine library) + `crates/koklaude` (the
@@ -66,6 +45,10 @@ Claude-Code code) and lets us later `git subtree split crates/hanasu` into its o
 repo and publish it, with zero untangling. Kept to two crates — modules like
 `transcript`/`daemon`/`config` stay inside the binary rather than becoming
 micro-crates (avoiding over-engineering).
+**License:** **MIT.** Because we invoke `espeak-ng` as a separate CLI process
+(D3) rather than linking it, its GPL doesn't propagate — so both crates are MIT,
+and `hanasu` is cleanly publishable. The user installs `espeak-ng` themselves
+(docs/prerequisites.md).
 
 ## D5 — Integrate via Claude Code's Stop hook
 **Decision:** A `Stop` hook runs `koklaude hook` after each assistant turn.
