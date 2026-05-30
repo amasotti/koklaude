@@ -72,7 +72,9 @@ impl Engine {
         let style = Tensor::from_array(([1, STYLE_DIM], style)).map_err(infer_err)?;
         let speed = Tensor::from_array(([1], vec![self.speed])).map_err(infer_err)?;
 
-        let mut session = self.session.lock().expect("engine session mutex poisoned");
+        // Recover from poisoning: a prior panic doesn't corrupt the session, so a
+        // single bad synth shouldn't permanently brick the engine.
+        let mut session = self.session.lock().unwrap_or_else(|p| p.into_inner());
         let outputs = session
             .run(ort::inputs!["tokens" => tokens, "style" => style, "speed" => speed])
             .map_err(infer_err)?;

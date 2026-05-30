@@ -43,6 +43,38 @@ incl. an end-to-end smoke test. Full spec: [`phase2-engine-api.md`](phase2-engin
 - `config` + toggle flag (`on`/`off`).
 - No daemon yet: `koklaude say "..."` can synth+play directly to validate the chain.
 
+### Slices (working notes — iterate, then delete on phase completion)
+Each slice = one reviewable PR-sized step: build → clippy/tests green → review.
+Pure logic before I/O; the chain-validating `say` lands early so we feel sound.
+
+- **3a — `config` (paths + defaults).** Pure module: resolve the koklaude home
+  (`~/.claude/koklaude/`, env-overridable for tests), locate `model.onnx` +
+  `voices.bin`, hold default voice + speed. No file format yet (just paths +
+  a `Config` struct with defaults). Unit-test path resolution.
+- **3b — `say` end-to-end.** Wire `koklaude say "..."` → `config` paths →
+  `hanasu::Engine::load` → `synth` → write temp WAV → `afplay`. Proves the
+  binary↔engine chain with zero daemon. Smoke-test (gated on model presence,
+  like hanasu's e2e test).
+- **3c — `clean` (markdown → speakable prose).** Pure fn `clean(&str) -> String`:
+  drop fenced code blocks + inline code, strip markdown markup (headings, lists,
+  emphasis, links→text), collapse whitespace. Heavily unit-tested (this is the
+  quality-of-speech core). Not yet wired into anything.
+- **3d — `transcript` (hook input → last assistant turn).** Pure: (1) parse the
+  Stop-hook stdin JSON (`serde`) to get `transcript_path`; (2) read that JSONL
+  and extract the text of the last assistant turn. Fixture-driven tests (commit a
+  small sample transcript). Returns plain text — `clean` is applied by the caller.
+- **3e — `on`/`off` toggle.** Enabled-flag as a file under the koklaude home
+  (presence = on). Pure `is_enabled()` + `enable()`/`disable()`; wire `on`/`off`
+  commands. Unit-test the flag round-trip.
+
+Open within the phase:
+- Does `say` run text through `clean`, or speak raw? (Lean: raw — `say` is a
+  manual test path; `hook` is what cleans.)
+- `config` file format/persistence — defer to Phase 5 `init`? (Lean: yes; 3a is
+  paths + in-code defaults only.)
+- Exact shape of a transcript JSONL line — confirm against a real capture before
+  3d (don't guess the schema).
+
 ## Phase 4 — Daemon + hook
 - `daemon`: warm engine, unix socket, serial playback **queue**, 30-min idle exit.
 - `client`: connect (spawn daemon if absent), send text, never block Claude Code.

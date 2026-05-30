@@ -9,9 +9,12 @@ use crate::{Error, Result};
 /// The caller passes a punctuation-free chunk; punctuation/pause handling lives
 /// in the tokenizer. espeak drops punctuation and emits a newline on clause
 /// breaks, so `normalize` flattens any whitespace back to single spaces.
+///
+/// The `--` is required: without it espeak parses text starting with `-` (e.g. a
+/// list dash or a negative number) as an option and silently emits nothing.
 pub(crate) fn phonemize(text: &str) -> Result<String> {
     let output = Command::new("espeak-ng")
-        .args(["-q", "--ipa", "-v", "en-us", text])
+        .args(["-q", "--ipa", "-v", "en-us", "--", text])
         .output()
         .map_err(|e| Error::Espeak(format!("could not run espeak-ng: {e}")))?;
 
@@ -59,5 +62,16 @@ mod tests {
         assert_eq!(phonemize("Hello world").unwrap(), "həlˈoʊ wˈɜːld");
         assert_eq!(phonemize("Kubernetes").unwrap(), "kˌuːbɚnˈɛɾiːz");
         assert_eq!(phonemize("").unwrap(), "");
+    }
+
+    #[test]
+    fn phonemize_handles_leading_dash() {
+        if !espeak_available() {
+            eprintln!("skipping phonemize_handles_leading_dash: espeak-ng not installed");
+            return;
+        }
+        // Without `--`, espeak treats these as options and returns nothing.
+        assert!(!phonemize("-5 degrees").unwrap().is_empty());
+        assert!(!phonemize("- a list item").unwrap().is_empty());
     }
 }
