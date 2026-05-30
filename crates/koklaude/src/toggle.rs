@@ -26,7 +26,10 @@ pub fn enable(home: &Path) -> Result<()> {
 pub fn disable(home: &Path) -> Result<()> {
     let flag = home.join(FLAG);
     match std::fs::remove_file(&flag) {
-        Ok(()) => Ok(()),
+        Ok(()) => {
+            println!("Koklaude disabled - Claude will no longer speak.");
+            Ok(())
+        }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(e).with_context(|| format!("remove {flag:?}")),
     }

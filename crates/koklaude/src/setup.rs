@@ -7,9 +7,11 @@
 //! Claude Code spawns directly with no shell, so a binary path containing spaces
 //! needs no quoting. Stop has **no `matcher`** — it fires unconditionally.
 //!
-//! Our hook is identified **structurally** (binary basename `koklaude` + args
-//! `["hook"]`), not by exact command string, so a re-install from a different
-//! path replaces rather than duplicates, and uninstall always finds it.
+//! Our hook is identified **structurally** (the `koklaude` binary invoked with the
+//! `hook` subcommand — exec *or* shell form), not by exact command string, so a
+//! re-install from a different path replaces rather than duplicates, and uninstall
+//! always finds it — including a hand-edited or corrupt entry. See
+//! `is_koklaude_hook`.
 
 use std::ffi::OsStr;
 use std::fs::File;
@@ -140,45 +142,52 @@ pub fn merge_stop_hook(mut settings: Value, exe: &Path) -> Result<Value> {
 }
 
 /// Remove koklaude's Stop hook(s) from `settings`, leaving every other hook intact.
-/// Matches **structurally** (binary basename `koklaude` + args `["hook"]`), so it
-/// finds our hook regardless of which path registered it. Cascade-cleans anything
+/// Matches **structurally** (see `is_koklaude_hook`), so it finds our hook in either
+/// registration form regardless of which path registered it. Cascade-cleans anything
 /// it empties (group → `Stop` → `hooks`), so `merge` then `remove` restores the
-/// original.
-pub fn remove_stop_hook(mut settings: Value) -> Result<Value> {
+/// original. Returns the settings plus how many koklaude hooks were removed, so the
+/// caller can report honestly instead of always claiming success.
+pub fn remove_stop_hook(mut settings: Value) -> Result<(Value, usize)> {
     let Value::Object(root) = &mut settings else {
         bail!("settings is not a JSON object");
     };
     let hooks = match root.get_mut("hooks") {
-        None => return Ok(settings),
+        None => return Ok((settings, 0)),
         Some(Value::Object(m)) => m,
         Some(_) => bail!("`hooks` is present but is not a JSON object"),
     };
     let stop = match hooks.get_mut("Stop") {
-        None => return Ok(settings),
+        None => return Ok((settings, 0)),
         Some(Value::Array(a)) => a,
         Some(_) => bail!("`Stop` is present but is not a JSON array"),
     };
 
-    strip_our_hooks(stop);
+    let removed = strip_our_hooks(stop);
     if stop.is_empty() {
         hooks.remove("Stop");
     }
     if hooks.is_empty() {
         root.remove("hooks");
     }
-    Ok(settings)
+    Ok((settings, removed))
 }
 
 /// Drop every koklaude hook from each Stop group; drop a group left empty. Foreign
-/// group shapes are left untouched.
-fn strip_our_hooks(stop: &mut Vec<Value>) {
+/// group shapes are left untouched. Returns how many koklaude hooks were removed.
+fn strip_our_hooks(stop: &mut Vec<Value>) -> usize {
+    let mut removed = 0;
     stop.retain_mut(|group| match group.get_mut("hooks") {
         Some(Value::Array(inner)) => {
-            inner.retain(|h| !is_koklaude_hook(h));
+            inner.retain(|h| {
+                let ours = is_koklaude_hook(h);
+                removed += ours as usize;
+                !ours
+            });
             !inner.is_empty()
         }
         _ => true,
     });
+    removed
 }
 
 /// A fresh Stop group registering `exe` in exec form (no shell → spaces safe).
@@ -186,19 +195,35 @@ fn hook_group(exe: &Path) -> Value {
     json!({ "hooks": [{ "type": "command", "command": exe.to_string_lossy(), "args": ["hook"] }] })
 }
 
-/// Is this inner hook entry one of ours? Identified by the binary's basename
-/// (`koklaude`) plus the `["hook"]` args — independent of the absolute path, so a
-/// move/reinstall can't orphan it.
+/// Does this path's final component equal `koklaude`?
+fn basename_is_koklaude(path: &str) -> bool {
+    Path::new(path).file_name() == Some(OsStr::new("koklaude"))
+}
+
+/// Is this inner hook entry one of ours? Matched **structurally** — the `koklaude`
+/// binary invoked with the `hook` subcommand — across both the exec form `init`
+/// writes (`command` = the binary, `args` = `["hook"]`) and the shell form
+/// (`command` = `".../koklaude hook"`), plus a corrupt mix of the two.
+///
+/// The executable is recognized when `koklaude` is the basename of either the whole
+/// `command` (exec form, incl. a path with spaces) or its first whitespace token
+/// (shell form); `hook` is recognized in `args` or in the command's tail. So it's
+/// path-independent — a move/reinstall never orphans it, and a hand-edited entry is
+/// still cleaned.
 fn is_koklaude_hook(entry: &Value) -> bool {
-    let exe_is_koklaude = entry
-        .get("command")
-        .and_then(Value::as_str)
-        .is_some_and(|c| Path::new(c).file_name() == Some(OsStr::new("koklaude")));
-    let args_is_hook = entry
+    let Some(command) = entry.get("command").and_then(Value::as_str) else {
+        return false;
+    };
+    let first_token = command.split_whitespace().next().unwrap_or(command);
+    let exe_is_koklaude = basename_is_koklaude(command) || basename_is_koklaude(first_token);
+
+    let arg_has_hook = entry
         .get("args")
         .and_then(Value::as_array)
-        .is_some_and(|a| a.len() == 1 && a.first().and_then(Value::as_str) == Some("hook"));
-    exe_is_koklaude && args_is_hook
+        .is_some_and(|a| a.iter().filter_map(Value::as_str).any(|s| s == "hook"));
+    let command_tail_has_hook = command.split_whitespace().skip(1).any(|t| t == "hook");
+
+    exe_is_koklaude && (arg_has_hook || command_tail_has_hook)
 }
 
 // --- composition: `koklaude init` / `koklaude uninstall` -----------------
@@ -246,8 +271,20 @@ pub fn init(cfg: &Config) -> Result<()> {
 pub fn uninstall(home: &Path, purge: bool) -> Result<()> {
     let settings = claude_settings_path()?;
     if settings.exists() {
-        rewrite_settings(&settings, remove_stop_hook)?;
-        println!("removed Stop hook from {}", settings.display());
+        let mut removed = 0;
+        rewrite_settings(&settings, |s| {
+            let (s, n) = remove_stop_hook(s)?;
+            removed = n;
+            Ok(s)
+        })?;
+        if removed > 0 {
+            println!("removed koklaude Stop hook from {}", settings.display());
+        } else {
+            println!(
+                "no koklaude Stop hook found in {} — nothing to remove",
+                settings.display()
+            );
+        }
     }
     toggle::disable(home)?;
     if purge {
@@ -411,7 +448,7 @@ mod tests {
         assert_eq!(reg["model"], "opus"); // unrelated keys preserved
         assert_eq!(our_hooks(&reg).len(), 1);
 
-        rewrite_settings(&path, remove_stop_hook).unwrap();
+        rewrite_settings(&path, |s| remove_stop_hook(s).map(|(v, _)| v)).unwrap();
         let unreg: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(unreg, json!({ "model": "opus" })); // semantically restored
     }
@@ -512,8 +549,9 @@ mod tests {
     #[test]
     fn remove_cleans_up_completely() {
         let with = merge_stop_hook(json!({}), Path::new(EXE)).unwrap();
-        let got = remove_stop_hook(with).unwrap();
+        let (got, removed) = remove_stop_hook(with).unwrap();
         assert_eq!(got, json!({})); // emptied group → Stop → hooks all pruned
+        assert_eq!(removed, 1); // and it reports the one it took
     }
 
     #[test]
@@ -522,7 +560,7 @@ mod tests {
             "hooks": { "Stop": [{ "hooks": [{ "type": "command", "command": "mine.sh" }] }] }
         });
         let with = merge_stop_hook(before.clone(), Path::new(EXE)).unwrap();
-        let got = remove_stop_hook(with).unwrap();
+        let (got, _) = remove_stop_hook(with).unwrap();
         assert_eq!(got, before); // user's hook survives untouched
     }
 
@@ -531,14 +569,14 @@ mod tests {
     #[test]
     fn remove_is_orphan_proof_across_paths() {
         let with = merge_stop_hook(json!({}), Path::new("/some/old/koklaude")).unwrap();
-        assert_eq!(remove_stop_hook(with).unwrap(), json!({}));
+        assert_eq!(remove_stop_hook(with).unwrap(), (json!({}), 1));
     }
 
     #[test]
     fn remove_is_noop_when_absent() {
         let settings = json!({ "hooks": { "PreToolUse": [] } });
-        assert_eq!(remove_stop_hook(settings.clone()).unwrap(), settings);
-        assert_eq!(remove_stop_hook(json!({})).unwrap(), json!({}));
+        assert_eq!(remove_stop_hook(settings.clone()).unwrap(), (settings, 0));
+        assert_eq!(remove_stop_hook(json!({})).unwrap(), (json!({}), 0));
     }
 
     #[test]
@@ -549,7 +587,7 @@ mod tests {
             json!({ "hooks": { "PreToolUse": [{ "hooks": [{ "type": "command", "command": "x.sh" }] }] } }),
             json!({ "hooks": { "Stop": [{ "hooks": [{ "type": "command", "command": "mine.sh" }] }] } }),
         ] {
-            let round =
+            let (round, _) =
                 remove_stop_hook(merge_stop_hook(original.clone(), Path::new(EXE)).unwrap())
                     .unwrap();
             assert_eq!(round, original, "round-trip must restore the original");
@@ -561,6 +599,53 @@ mod tests {
         assert!(remove_stop_hook(json!(42)).is_err());
         assert!(remove_stop_hook(json!({ "hooks": 5 })).is_err());
         assert!(remove_stop_hook(json!({ "hooks": { "Stop": 5 } })).is_err());
+    }
+
+    /// Wrap an inner hook entry in a full settings doc so `remove_stop_hook` can
+    /// be run against it.
+    fn settings_with(entry: Value) -> Value {
+        json!({ "hooks": { "Stop": [{ "hooks": [entry] }] } })
+    }
+
+    /// Robust matcher: a hook registered in **shell form** (no `args`, the whole
+    /// invocation in `command`) is recognized and removed — not just exec form.
+    #[test]
+    fn remove_finds_shell_form_hook() {
+        let shell = settings_with(json!({
+            "type": "command", "command": "/usr/local/bin/koklaude hook"
+        }));
+        let (got, removed) = remove_stop_hook(shell).unwrap();
+        assert_eq!(removed, 1);
+        assert_eq!(got, json!({}));
+    }
+
+    /// Robust matcher: the corrupt mix (`command` carries a trailing ` hook` *and*
+    /// `args` is present) — the state a botched hand-edit produced — is still ours,
+    /// so `uninstall`/`init` can clean it instead of orphaning it.
+    #[test]
+    fn remove_finds_corrupt_mixed_form_hook() {
+        let corrupt = settings_with(json!({
+            "type": "command", "command": "/usr/local/bin/koklaude hook", "args": ["hook"]
+        }));
+        let (got, removed) = remove_stop_hook(corrupt).unwrap();
+        assert_eq!(removed, 1);
+        assert_eq!(got, json!({}));
+    }
+
+    /// A foreign Stop hook that merely *mentions* koklaude-ish words must NOT match:
+    /// wrong basename, or koklaude without the `hook` subcommand.
+    #[test]
+    fn remove_leaves_foreign_and_non_hook_koklaude_invocations() {
+        for entry in [
+            json!({ "type": "command", "command": "/usr/bin/koklaude-wrapper", "args": ["hook"] }),
+            json!({ "type": "command", "command": "/usr/local/bin/koklaude", "args": ["on"] }),
+            json!({ "type": "command", "command": "/usr/local/bin/koklaude on" }),
+        ] {
+            let before = settings_with(entry);
+            let (got, removed) = remove_stop_hook(before.clone()).unwrap();
+            assert_eq!(removed, 0, "must not claim {before}");
+            assert_eq!(got, before, "must leave {before} untouched");
+        }
     }
 
     // --- purge guard (the hard safety wall) ------------------------------
