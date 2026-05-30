@@ -127,7 +127,5 @@ Carried into Phase 6: pick a good default voice; the README "Install & use".
 - Linux/Windows audio playback (beyond macOS `afplay`).
 
 ## Open questions (revisit as we go)
-- ~~Exact Kokoro ONNX I/O contract~~ — ✅ resolved in Phase 1 (see above).
-- ~~Best default voice~~ — ✅ `af_heart` (Kokoro's reference voice); Phase 6 S1.
 - Streaming/chunked synthesis for long replies vs. synth-then-play.
 - crates.io name for `hanasu` at publish time (the name is free today).

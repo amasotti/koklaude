@@ -1,0 +1,94 @@
+name: Tag and Release
+
+# Fires when the autorelease PR (opened by release-pr.yml) is merged into main.
+# Job `release` tags the merge commit and publishes a GitHub Release with notes;
+# job `binaries` builds the macOS binary and attaches it to that same release.
+# Both run in one workflow run, so the GITHUB_TOKEN-pushed tag never needs to
+# trigger a second workflow (which it wouldn't, by design).
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Tag merge commit and publish release
+    if: >
+      github.event.pull_request.merged == true &&
+      contains(github.event.pull_request.labels.*.name, 'autorelease')
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.ver.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from PR title
+        id: ver
+        run: |
+          TITLE="${{ github.event.pull_request.title }}"
+          VERSION=$(echo "$TITLE" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?')
+          if [ -z "$VERSION" ]; then
+            echo "No version found in PR title: $TITLE"
+            exit 1
+          fi
+          echo "tag=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.ver.outputs.tag }}"
+          git push origin "${{ steps.ver.outputs.tag }}"
+
+      - name: Generate changelog
+        uses: orhun/git-cliff-action@v4
+        id: cliff
+        with:
+          config: .github/cliff.toml
+          args: --latest --strip header
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          body: ${{ steps.cliff.outputs.content }}
+          draft: false
+          prerelease: ${{ contains(steps.ver.outputs.tag, '-') }}
+
+  binaries:
+    name: Build & attach macOS binary
+    needs: release
+    runs-on: macos-14 # Apple Silicon runner → native aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      # No espeak-ng here: it's a runtime dependency (g2p shells out to it),
+      # not needed to compile the binary.
+      - name: Build release binary
+        run: cargo build --release -p koklaude
+
+      - name: Package tarball
+        run: |
+          TARBALL="koklaude-${{ needs.release.outputs.tag }}-aarch64-apple-darwin.tar.gz"
+          tar -czf "$TARBALL" -C target/release koklaude
+          echo "TARBALL=$TARBALL" >> "$GITHUB_ENV"
+
+      - name: Attach binary to release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.release.outputs.tag }}
+          files: ${{ env.TARBALL }}
