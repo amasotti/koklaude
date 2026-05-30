@@ -73,12 +73,31 @@ Full detail: [`docs/architecture.md`](docs/architecture.md).
 
 ## Install & use
 
+**Option A — prebuilt binary** (macOS, Apple Silicon). Each release attaches an
+`aarch64-apple-darwin` tarball; grab the latest with the GitHub CLI:
+
 ```bash
-# Build & install from source. (Prebuilt binaries + `cargo install koklaude`
-# from crates.io are coming — see docs/plan.md.)
+gh release download --repo amasotti/koklaude \
+  --pattern '*-aarch64-apple-darwin.tar.gz'
+tar -xzf koklaude-*-aarch64-apple-darwin.tar.gz
+sudo mv koklaude /usr/local/bin/        # or anywhere on your PATH
+```
+
+The binary isn't notarized. If you download it through a browser instead of
+`gh`, macOS Gatekeeper will quarantine it — clear that with
+`xattr -d com.apple.quarantine /usr/local/bin/koklaude`.
+
+**Option B — from source** (any cargo target; `cargo install koklaude` from
+crates.io is coming — see [`docs/plan.md`](docs/plan.md)):
+
+```bash
 git clone https://github.com/amasotti/koklaude && cd koklaude
 cargo install --path crates/koklaude
+```
 
+Then, either way:
+
+```bash
 koklaude init                 # check for espeak-ng, download model + voices,
                               # write config, register the Stop hook
 # ... that's it. Claude now speaks.
