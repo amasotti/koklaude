@@ -5,9 +5,6 @@
 //! worth hearing: prose, headings, list/table cell text, inline-code tokens.
 //! Block elements become separate lines so espeak pauses between them.
 
-// Unused until the hook (Phase 4) / transcript path feeds it — remove then.
-#![allow(dead_code)]
-
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 
 /// Strip markdown to plain, speakable text.

@@ -6,9 +6,6 @@
 //! `ConnectionRefused` (stale socket from a crash; the daemon's `bind` unlinks
 //! and rebinds it on respawn). Any other connect error is a real failure.
 
-// Used by the hook (4e) — remove this allow when wired.
-#![allow(dead_code)]
-
 use std::io::ErrorKind;
 use std::os::unix::net::UnixStream;
 use std::path::Path;

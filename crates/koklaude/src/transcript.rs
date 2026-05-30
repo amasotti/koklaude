@@ -9,9 +9,6 @@
 //! *also* `type: "user"` but carry a `tool_result` array. So the last turn is
 //! everything after the last string-content user line.
 
-// Unused until the hook (Phase 4) wires it — remove then.
-#![allow(dead_code)]
-
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
@@ -41,7 +38,9 @@ struct Message {
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum Content {
-    Text(String),
+    // The payload is never read — its presence just discriminates a real user
+    // prompt (string) from a tool-result (array) during untagged deserialization.
+    Text(#[allow(dead_code)] String),
     Blocks(Vec<Block>),
 }
 

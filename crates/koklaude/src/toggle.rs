@@ -11,8 +11,6 @@ use anyhow::{Context, Result};
 const FLAG: &str = "enabled";
 
 /// Is speech currently enabled?
-// Used by the hook (Phase 4); remove this allow when wired.
-#[allow(dead_code)]
 pub fn is_enabled(home: &Path) -> bool {
     home.join(FLAG).exists()
 }

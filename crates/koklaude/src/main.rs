@@ -5,6 +5,7 @@ mod clean;
 mod client;
 mod config;
 mod daemon;
+mod hook;
 mod ipc;
 mod playback;
 mod toggle;
@@ -55,7 +56,7 @@ fn main() -> anyhow::Result<()> {
     match cli.command {
         Command::Init => todo!("init: download model + register Stop hook"),
         Command::Daemon => daemon::run(&Config::load()?),
-        Command::Hook => todo!("hook: parse transcript -> clean -> daemon"),
+        Command::Hook => hook::run(),
         Command::On => {
             toggle::enable(&config::home())?;
             println!("speech enabled");
