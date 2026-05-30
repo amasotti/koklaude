@@ -10,40 +10,9 @@ text → [espeak-ng] → IPA phonemes → [Kokoro vocab] → token ids → [ONNX
 
 ## Prerequisites
 
-| Need | Why | Get it (macOS) |
-|---|---|---|
-| `espeak-ng` on PATH | grapheme→phoneme (g2p) | `brew install espeak-ng` |
-| `unzip` on PATH | reads a voice out of the voices npz | ships with macOS |
-| Rust toolchain + `just` | build/run | `brew install just` |
-| `kokoro-v1.0.onnx` | the model (fp32, ~310 MB) | download ↓ |
-| `voices-v1.0.bin` | 54 voice style vectors (~28 MB) | download ↓ |
-
-`ort` downloads its own ONNX Runtime binary on first build (the
-`download-binaries` feature) — **no** `brew install onnxruntime` needed.
-
-Verify espeak is present:
-
-```sh
-espeak-ng --version
-# eSpeak NG text-to-speech: 1.52.0  (was 1.52.0 when we ran this)
-```
-
-## Download the model + voices
-
-Both files live outside the repo, under `~/.claude/koklaude/` (the project's real
-runtime layout — see `docs/architecture.md`). They are **not** committed.
-
-```sh
-mkdir -p ~/.claude/koklaude
-cd ~/.claude/koklaude
-
-# Model weights, fp32 (~310 MB) and the packed voices (~28 MB).
-# Source: thewh1teagle/kokoro-onnx release `model-files-v1.0`.
-curl -fL -o kokoro-v1.0.onnx \
-  https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx
-curl -fL -o voices-v1.0.bin \
-  https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
-```
+See [`docs/prerequisites.md`](prerequisites.md) — `espeak-ng`, the model +
+voices under `~/.claude/koklaude/`, and the build toolchain. Get those in place
+first, then come back here.
 
 `voices-v1.0.bin` is a zip (npz) of `<voice>.npy` files, each a numpy `<f4`
 array of shape `(510, 1, 256)`. The spike reads one voice straight from it with

@@ -81,6 +81,13 @@ koklaude on                   # speech back
 koklaude say "hello there"    # manual test
 ```
 
+### Prerequisites
+
+`koklaude init` will eventually automate setup. Today, two things are needed on
+the machine: **`espeak-ng`** and the **Kokoro model + voices** under
+`~/.claude/koklaude/`. See [`docs/prerequisites.md`](docs/prerequisites.md). With
+those in place you can already run the Phase 1 engine spike — [`docs/spike.md`](docs/spike.md).
+
 ## Design at a glance
 
 - **Speaks** the full reply with code blocks stripped (code read aloud is noise).
