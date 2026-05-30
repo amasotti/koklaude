@@ -3,6 +3,7 @@
 
 mod clean;
 mod config;
+mod ipc;
 mod playback;
 mod toggle;
 mod transcript;

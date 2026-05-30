@@ -33,7 +33,7 @@ pub fn clean(markdown: &str) -> String {
 
             // Prose. Inline `code` is kept (usually a short identifier/word).
             Event::Text(t) if !in_code_block && !in_image => out.push_str(&t),
-            Event::Code(t) => out.push_str(&t),
+            Event::Code(t) if !in_image => out.push_str(&t),
 
             Event::SoftBreak | Event::HardBreak => out.push(' '),
 
@@ -111,6 +111,12 @@ mod tests {
     #[test]
     fn image_alt_dropped() {
         assert_eq!(clean("Look ![a big diagram](x.png) here."), "Look here.");
+    }
+
+    #[test]
+    fn image_alt_with_inline_code_dropped() {
+        // Inline code inside alt text must not leak (Event::Code is in_image-guarded).
+        assert_eq!(clean("Look ![run `cargo` now](x.png) here."), "Look here.");
     }
 
     #[test]

@@ -15,6 +15,7 @@ const HOME_ENV: &str = "KOKLAUDE_HOME";
 const MODEL_FILE: &str = "kokoro-v1.0.onnx";
 const VOICES_FILE: &str = "voices-v1.0.bin";
 const CONFIG_FILE: &str = "config.toml";
+const SOCKET_FILE: &str = "daemon.sock";
 
 /// Provisional default voice — plan's "best default voice" is still open.
 const DEFAULT_VOICE: &str = "af_heart";
@@ -54,6 +55,13 @@ impl Config {
 
     pub fn voices_path(&self) -> PathBuf {
         self.home.join(VOICES_FILE)
+    }
+
+    /// Unix socket the daemon binds and the hook client connects to.
+    // Used by daemon + client (4b/4d) — remove this allow when wired.
+    #[allow(dead_code)]
+    pub fn socket_path(&self) -> PathBuf {
+        self.home.join(SOCKET_FILE)
     }
 }
 
