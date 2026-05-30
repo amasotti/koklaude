@@ -42,7 +42,7 @@ There's already a couple of good projects in this direction, e.g. [`ybouhjira/cl
 | `kokorox` / `Kokoros`       | Rust Kokoro, installable (`ort 2.0-rc`) | Shaped as a CLI/server, not a clean library.                                                                                                 |
 
 None met *safe, free/local, small, embeddable*. 
-So koklaude rebuilds what `kokoroxide` set out to be — a clean Kokoro engine on a maintained `ort` 2.0 — as **`hanasu`**. Like every Kokoro stack that pronounces arbitrary words well, it uses `espeak-ng` for phonemes, which makes it **GPL-3.0** (see [License](#license)).
+So koklaude rebuilds what `kokoroxide` set out to be — a clean Kokoro engine on a maintained `ort` 2.0 — as **`hanasu`**. Like every Kokoro stack that pronounces arbitrary words well, it uses `espeak-ng` for phonemes — but invoked as a **separate CLI process**, so koklaude itself stays **MIT** (see [License](#license)).
 
 ## How it works (one binary)
 

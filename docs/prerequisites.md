@@ -43,6 +43,12 @@ curl -fL -o voices-v1.0.bin \
   https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
 ```
 
+**See list of voices**:
+
+```bash
+unzip -l ~/.claude/koklaude/voices-v1.0.bin | grep -o '[a-z][a-z]_[a-z]*'
+```
+
 ## 3. Build toolchain
 
 - Rust (stable) + [`just`](https://github.com/casey/just) (`brew install just`).

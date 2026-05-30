@@ -25,7 +25,8 @@ Local, offline TTS for Claude Code. Two-crate Rust workspace:
 - `just spike [voice] [text]` — Phase 1 engine spike → synth + play WAV
 
 ## Conventions
-- Rust edition 2024; GPL-3.0-or-later (espeak linkage — docs/decisions.md D4).
+- Rust edition 2024; **MIT** (espeak-ng invoked as an external CLI, not linked —
+  docs/decisions.md D3).
 - clippy clean (`-D warnings`) + `cargo fmt` before calling work done.
 - Unit-test pure logic (tokenization, text cleaning); smoke-test synth.
 - Claude works closely following the plan, brainstorming what is clear or undecided there, after approval implementing it. Phases that are completed are also marked as completed in the plan.md
