@@ -124,10 +124,6 @@ Carried into Phase 6: pick a good default voice; the README "Install & use".
   (successor to the dead `kokoroxide`; MIT).
 - **More assistants:** Codex / pi adapters — a new front end per assistant, the
   same engine (see architecture › Extensibility).
-- **Optional pure-Rust G2P:** `misaki-rs` with its `espeak` feature is a full
-  Misaki port (POS-aware, number expansion) that could improve prosody, but it
-  re-links espeak. The espeak-free build was tested and rejected (Phase 1.5: it
-  spells jargon letter-by-letter). espeak CLI stays the default.
 - Linux/Windows audio playback (beyond macOS `afplay`).
 
 ## Open questions (revisit as we go)
