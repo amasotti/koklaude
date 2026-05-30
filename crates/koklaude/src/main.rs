@@ -32,6 +32,12 @@ struct Cli {
 enum Command {
     /// One-time setup: download the model and register the Stop hook.
     Init,
+    /// Remove the Stop hook and disable speech (reverses `init`).
+    Uninstall {
+        /// Also delete the koklaude home (model, voices, config).
+        #[arg(long)]
+        purge: bool,
+    },
     /// Run the background daemon (holds the model warm).
     Daemon,
     /// Stop-hook entrypoint. Reads hook JSON from stdin.
@@ -55,7 +61,8 @@ enum Command {
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Init => todo!("init: download model + register Stop hook"),
+        Command::Init => setup::init(&Config::load()?),
+        Command::Uninstall { purge } => setup::uninstall(&config::home(), purge),
         Command::Daemon => daemon::run(&Config::load()?),
         Command::Hook => hook::run(),
         Command::On => {

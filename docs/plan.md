@@ -67,65 +67,30 @@ deep dive [`daemon-and-sockets.md`](daemon-and-sockets.md).
 Carried forward (post-1.0): long replies still synth-then-play per request;
 chunking/streaming stays an open question below.
 
-## Phase 5 — Setup / one-command install
-**Goal:** `koklaude init` takes a fresh machine to "Claude speaks" in one command:
-detect `espeak-ng` → fetch model + voices → write default config → register the
-Stop hook → enable. Idempotent: safe to re-run, never clobbers user edits.
-`koklaude uninstall` is the clean inverse — pulls the hook back out of
-`settings.json` and disables, never breaking the user's other hooks.
-- `koklaude init`: download model + voices to `~/.config/koklaude/`, write default
-  config, **merge** the Stop hook into `~/.claude/settings.json` (preserving
-  existing hooks), enable.
-- `koklaude uninstall`: **remove** the koklaude Stop hook from `settings.json`
-  (leaving every other hook intact), disable speech. Leaves the downloaded
-  model/voices in place by default (re-download is expensive); `--purge` also
-  removes the koklaude home.
-- Detect `espeak-ng`; if missing, print the install hint (`brew install espeak-ng`).
+## Phase 5 — Setup / one-command install ✅
+`koklaude init` takes a fresh machine to "Claude speaks" in one command, and
+`koklaude uninstall` cleanly reverses it — never touching the user's other hooks.
+All in one new `setup` module. `init`: detect `espeak-ng` (print the install hint
+if missing, don't fail) → download model + voices → write default `config.toml` →
+merge the Stop hook into `~/.claude/settings.json` → `toggle::enable`.
+`uninstall`: strip the koklaude hook → `toggle::disable` (`--purge` also removes
+the koklaude home; model/voices kept by default — re-download is expensive).
+- **Settings surgery is pure + symmetric** (`merge_stop_hook`/`remove_stop_hook`
+  over `serde_json::Value`): idempotent merge, cascade-cleaning remove, errors
+  rather than clobbering a mis-shaped `hooks`/`Stop`. Verified schema: `hooks.Stop`
+  is an array of `{ "hooks": [...] }` groups, **no `matcher`** (code.claude.com/docs).
+- **Downloads** stream via `ureq` `into_reader()` (unlimited — the 10 MB default cap
+  would truncate the 310 MB model) to a `.part` temp then rename; skip if present
+  non-empty; a truncated fetch fails the read and never renames. Settings writes are
+  atomic the same way — temp + rename, so a crash can't corrupt `settings.json`.
+- The hook command is registered as the binary's **absolute path** + `hook` (works
+  regardless of `$PATH`); `~/.claude` honors `$CLAUDE_CONFIG_DIR`.
+- 11 unit tests (merge/remove round-trips, config write, settings rewrite, `.part`
+  plumbing) + one `#[ignore]` network smoke test. Manual init→uninstall through the
+  binary confirmed settings.json **byte-restored**, foreign hooks untouched. Docs:
+  `prerequisites.md` now points at `init`.
 
-Deps already in the tree: `ureq` (download), `serde_json` (settings merge),
-`dirs` (locate `~/.claude`). No new crates expected.
-
-### Slices (working notes — iterate, then delete on phase completion)
-Pure/testable logic (settings merge, config write) lands first; the network
-download (heavy, gated like the model smoke tests) and the `init` wiring follow.
-
-- **5a — settings.json merge/unmerge (pure).** New `setup` module, two symmetric fns
-  over `serde_json::Value`: `merge_stop_hook(settings, command) -> Value` appends a
-  Stop hook group preserving every existing hook, **idempotent** (no duplicate if the
-  command is already present anywhere in `Stop`); `remove_stop_hook(settings, command)
-  -> Value` strips that command from every Stop group, drops emptied groups / `Stop`
-  / `hooks`, leaves all else intact. Verified schema (docs/hooks): `hooks.Stop` is an
-  array of groups, each `{ "hooks": [ { "type": "command", "command": "…" } ] }`,
-  **no `matcher`** on Stop. Unit-test fixtures both ways: empty `{}`, unrelated hooks
-  present, koklaude hook already present (merge no-op / remove cleans), non-object
-  `hooks` or non-array `Stop` (error, don't corrupt). No filesystem yet.
-- **5b — config.toml write + espeak detection.** `ConfigFile` gains `Serialize`;
-  `write_default_config(home)` serializes the defaults **only if absent** (never
-  clobber a user-edited file). `espeak_installed() -> bool` via
-  `Command::new("espeak-ng").arg("--version")`; on `false`, `init` prints the
-  `brew install espeak-ng` hint. Test config-write (present vs absent) in a temp dir.
-- **5c — download model + voices (gated).** `download(url, dest)` with `ureq`:
-  stream to a `.part` temp then rename (no half-file on interrupt), **skip if dest
-  already present and non-empty**, byte progress to stderr. URLs + sizes from
-  `docs/prerequisites.md` (`kokoro-onnx` release `model-files-v1.0`). Network-gated
-  smoke test (like the model tests); size sanity check, not a full checksum.
-- **5d — wire `init` + `uninstall` + review/docs.** `init`: detect espeak → ensure
-  home → download model+voices → write config → read/merge/atomically-write
-  `~/.claude/settings.json` → `toggle::enable`. `uninstall`: read → `remove_stop_hook`
-  → atomic-write → `toggle::disable` (`--purge` also removes the home). Replace the
-  `main.rs` `todo!`, add the `Uninstall` subcommand. Clippy/tests green; manual run
-  init→uninstall from a clean home, confirming settings.json is byte-restored. Update
-  `prerequisites.md` (manual → automated), mark Phase 5 done, prune these notes.
-
-Open within the phase:
-- ~~**Stop-hook JSON shape**~~ — ✅ resolved (above): `hooks.Stop` = array of
-  `{ "hooks": [...] }` groups, no `matcher`. Source: code.claude.com/docs hooks.
-- **Atomic settings write** — read → merge → write temp + rename, so a crash
-  mid-write never corrupts the user's `~/.claude/settings.json`.
-- **`~/.claude` location** — `dirs::home_dir()` + `.claude`; honor `CLAUDE_CONFIG_DIR`
-  if Claude Code sets one (check before hardcoding).
-- **Re-run idempotency** — init twice = no duplicate hook, no clobbered config; only
-  missing pieces get filled.
+Carried into Phase 6: pick a good default voice; the README "Install & use".
 
 ## Phase 6 — Polish & ship
 - Release binaries; make the README "Install & use" real.

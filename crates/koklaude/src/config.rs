@@ -72,8 +72,7 @@ impl Config {
 
 /// Write a default `config.toml` under `home`, **only if absent** — never clobber
 /// a user-edited file. Returns `true` if it wrote, `false` if one already existed.
-/// Creates `home` if needed. (`init` calls this; 5d wires it.)
-#[allow(dead_code)] // unwired until 5d composes `init`
+/// Creates `home` if needed. (Called by `setup::init`.)
 pub fn write_default_config(home: &Path) -> Result<bool> {
     let path = home.join(CONFIG_FILE);
     if path.exists() {
@@ -194,6 +193,9 @@ mod tests {
         let dir = scratch("write-keep");
         std::fs::write(dir.join(CONFIG_FILE), "voice = \"am_adam\"\n").unwrap();
         assert!(!write_default_config(&dir).unwrap());
-        assert_eq!(ConfigFile::read(&dir).unwrap().voice.as_deref(), Some("am_adam"));
+        assert_eq!(
+            ConfigFile::read(&dir).unwrap().voice.as_deref(),
+            Some("am_adam")
+        );
     }
 }

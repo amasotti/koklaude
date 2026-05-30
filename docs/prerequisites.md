@@ -1,8 +1,13 @@
 # Prerequisites
 
-What koklaude needs on the machine. Today these are done by hand; Phase 5
-(`koklaude init`) will automate the download + setup. Until then, this is the
-manual checklist — and what the Phase 1 spike (`docs/spike.md`) relies on.
+What koklaude needs on the machine. **`koklaude init` automates the model/voices
+download, config, and Stop-hook registration** (§2 below) — run it once and skip
+the manual `curl`. `espeak-ng` (§1) you still install yourself; `init` checks for
+it and prints this hint if it's missing. The manual steps below remain the
+fallback and document what the Phase 1 spike (`docs/spike.md`) relies on.
+
+`koklaude uninstall` reverses `init` (removes the Stop hook, disables speech);
+`--purge` also deletes the downloaded model/voices.
 
 ## 1. `espeak-ng` (grapheme→phoneme)
 
@@ -24,8 +29,9 @@ espeak-ng --version
 
 ## 2. The Kokoro model + voices
 
-Both live under `~/.config/koklaude/` (koklaude's runtime home — see
-`docs/architecture.md`) and are **not** committed to the repo.
+`koklaude init` downloads both automatically; the manual `curl` below is only for
+the spike or a hand setup. Both live under `~/.config/koklaude/` (koklaude's
+runtime home — see `docs/architecture.md`) and are **not** committed to the repo.
 
 | File | What | Size |
 |---|---|---|
