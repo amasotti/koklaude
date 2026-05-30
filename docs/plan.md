@@ -83,8 +83,14 @@ the koklaude home; model/voices kept by default — re-download is expensive).
   would truncate the 310 MB model) to a `.part` temp then rename; skip if present
   non-empty; a truncated fetch fails the read and never renames. Settings writes are
   atomic the same way — temp + rename, so a crash can't corrupt `settings.json`.
-- The hook command is registered as the binary's **absolute path** + `hook` (works
-  regardless of `$PATH`); `~/.claude` honors `$CLAUDE_CONFIG_DIR`.
+- The hook is registered in **exec form** — `{type:command, command:<abs path>,
+  args:["hook"]}` — so Claude Code spawns it directly (no shell; binary paths with
+  spaces need no quoting). It's matched **structurally** (basename `koklaude` +
+  args `["hook"]`), so reinstalling from a new path replaces rather than duplicates
+  and uninstall always finds it. `~/.claude` honors `$CLAUDE_CONFIG_DIR`.
+- `uninstall --purge` removes the koklaude home only behind a hard guard: the final
+  path component must be exactly `koklaude` and not a symlink — never a parent,
+  home dir, or `/`, whatever `$KOKLAUDE_HOME` is set to.
 - 11 unit tests (merge/remove round-trips, config write, settings rewrite, `.part`
   plumbing) + one `#[ignore]` network smoke test. Manual init→uninstall through the
   binary confirmed settings.json **byte-restored**, foreign hooks untouched. Docs:
@@ -126,6 +132,6 @@ Carried into Phase 6: pick a good default voice; the README "Install & use".
 
 ## Open questions (revisit as we go)
 - ~~Exact Kokoro ONNX I/O contract~~ — ✅ resolved in Phase 1 (see above).
-- Best default voice.
+- ~~Best default voice~~ — ✅ `af_heart` (Kokoro's reference voice); Phase 6 S1.
 - Streaming/chunked synthesis for long replies vs. synth-then-play.
 - crates.io name for `hanasu` at publish time (the name is free today).

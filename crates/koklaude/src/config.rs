@@ -20,7 +20,8 @@ const VOICES_FILE: &str = "voices-v1.0.bin";
 const CONFIG_FILE: &str = "config.toml";
 const SOCKET_FILE: &str = "daemon.sock";
 
-/// Provisional default voice — plan's "best default voice" is still open.
+/// Default voice — Kokoro's own reference voice (highest-graded in hexgrad's
+/// voice table). Overridable via `config.toml` or `say --voice`.
 const DEFAULT_VOICE: &str = "af_heart";
 const DEFAULT_SPEED: f32 = 1.0;
 /// Free the warm model after this long with no replies (decisions D8).

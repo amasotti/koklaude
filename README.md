@@ -10,8 +10,10 @@ Claude finishes a reply — and *speaks* it aloud, on your machine, with no clou
 It uses the open-weight [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) TTS model, based on the [StyleTTS 2](https://arxiv.org/abs/2306.07691)
 family of models.
 
-> Status: **early / design phase.** 
-> The architecture is settled; the engine is being built step by step. Nothing here works end-to-end yet.
+> Status: **working on macOS.**
+> The full loop is wired — `koklaude init` sets it up, a warm daemon synthesizes, and the
+> Stop hook makes Claude speak each reply. `koklaude say "..."` works standalone too.
+> Remaining polish: prebuilt release binaries and a demo. macOS-only for now (playback is `afplay`).
 
 ---
 
@@ -69,17 +71,26 @@ flowchart TD
 
 Full detail: [`docs/architecture.md`](docs/architecture.md).
 
-## Install & use (planned)
+## Install & use
 
 ```bash
-cargo install koklaude        # or grab a release binary
-koklaude init                 # download the model, register the Stop hook
+# Build & install from source. (Prebuilt binaries + `cargo install koklaude`
+# from crates.io are coming — see docs/plan.md.)
+git clone https://github.com/amasotti/koklaude && cd koklaude
+cargo install --path crates/koklaude
+
+koklaude init                 # check for espeak-ng, download model + voices,
+                              # write config, register the Stop hook
 # ... that's it. Claude now speaks.
 
 koklaude off                  # silence
 koklaude on                   # speech back
-koklaude say "hello there"    # manual test
+koklaude say "hello there"    # manual test (standalone, no daemon)
+koklaude uninstall            # cleanly remove the hook (your other hooks untouched)
 ```
+
+`init` automates everything except `espeak-ng` itself — you install that once (see
+[Prerequisites](#prerequisites)); `init` prints the one-line install hint if it's missing.
 
 ### Standalone playback mode
 
@@ -101,15 +112,15 @@ voice = "af_heart"   # any of the 54 Kokoro voices (e.g. am_adam, bf_emma)
 speed = 1.0          # pace multiplier; 1.0 = normal
 ```
 
-The file is read today; `koklaude init` will write it for you (Phase 5). Precedence:
-`--flag` > `config.toml` > built-in default.
+`koklaude init` writes this file for you; edit it any time. Precedence:
+`--flag` > `config.toml` > built-in default (`af_heart`, speed `1.0`).
 
 ### Prerequisites
 
-`koklaude init` will eventually automate setup. Today, two things are needed on
-the machine: **`espeak-ng`** and the **Kokoro model + voices** under
-`~/.config/koklaude/`. See [`docs/prerequisites.md`](docs/prerequisites.md). With
-those in place you can already run the Phase 1 engine spike — [`docs/spike.md`](docs/spike.md).
+`koklaude init` downloads the **Kokoro model + voices** into `~/.config/koklaude/`
+for you. The one thing it can't install is **`espeak-ng`** (the grapheme→phoneme
+backend, kept arm's-length to stay MIT) — install that yourself first, e.g.
+`brew install espeak-ng`. Details: [`docs/prerequisites.md`](docs/prerequisites.md).
 
 ## Design at a glance
 
