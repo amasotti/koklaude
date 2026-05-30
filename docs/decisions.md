@@ -76,6 +76,37 @@ RAM when you're not coding.
 flip it. The hook checks it first and exits silently when off.
 **Why:** Turn speech on/off mid-session with no uninstall or restart.
 
+## D10 — `std` unix sockets, no async runtime
+**Decision:** Build the daemon on `std::os::unix::net` + one worker thread + an
+`mpsc` queue. No `tokio`, no async.
+**Why:** There's one model and playback is serial (D7), so there is no
+concurrency for an async runtime to exploit — the accept loop and a single
+playback worker is the whole story. `std` keeps the dependency tree and the
+mental model small (KISS). Idle shutdown is the one rough edge: the accept loop
+blocks in `incoming()` and `std` can't interrupt it, so the worker calls
+`std::process::exit(0)` when idle (nothing is playing then, so it's clean) rather
+than threading a shutdown signal through a blocking accept.
+
+## D11 — Socket wire protocol and lifecycle
+**Decision:**
+- **Framing:** one connection = one request. The client writes UTF-8 text and
+  half-closes (`shutdown(Write)`); the daemon reads to **EOF**. No length prefix
+  or delimiter — EOF is the boundary. Fire-and-forget, no reply.
+- **Stale-socket recovery:** `std` never unlinks the socket on exit, so a kill or
+  crash leaves an orphan file. On `bind` → `AddrInUse`, probe-connect: success =
+  a live daemon (bail), refused = stale (unlink + rebind). The graceful idle path
+  also unlinks, but the startup probe is the real safety net since signals run no
+  cleanup. The client uses the same `ConnectionRefused`-means-stale signal to
+  decide to respawn.
+- **Detachment:** the client spawns the daemon with stdio → `/dev/null`. That
+  alone keeps Claude Code from blocking (its pipe to the hook closes when the
+  hook exits, independent of the long-lived daemon). **No `setsid`/double-fork** —
+  verified end-to-end that the daemon survives the hook exiting on macOS.
+**Why:** Each piece is the simplest thing that's actually correct; the protocol
+needs no framing because there's exactly one message per connection, and the
+lifecycle handling makes a killed daemon self-heal on next launch. Full walkthrough:
+[`daemon-and-sockets.md`](daemon-and-sockets.md).
+
 ## Out of scope
 - **Speech-to-text input.** Handled by other tools (Claude Code voice mode,
   Spokenly, Whisper). koklaude is output-only.

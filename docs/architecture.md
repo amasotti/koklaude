@@ -71,6 +71,9 @@ A cold model load is too slow to run on every reply. So:
 - Requests go on a **queue** and play one at a time — text is never dropped.
 - After 30 minutes idle the daemon exits to free RAM; the next reply respawns it.
 
+Deep dive — the socket wire protocol, connect-or-spawn, idle shutdown, and
+stale-socket recovery: [`daemon-and-sockets.md`](daemon-and-sockets.md).
+
 ## Filesystem layout
 
 ```
