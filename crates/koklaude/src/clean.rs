@@ -78,7 +78,10 @@ mod tests {
 
     #[test]
     fn strips_emphasis_and_headings() {
-        assert_eq!(clean("# Title\n\nSome **bold** and *italic*."), "Title\nSome bold and italic.");
+        assert_eq!(
+            clean("# Title\n\nSome **bold** and *italic*."),
+            "Title\nSome bold and italic."
+        );
     }
 
     #[test]
@@ -94,7 +97,10 @@ mod tests {
 
     #[test]
     fn link_keeps_text_drops_url() {
-        assert_eq!(clean("See [the docs](https://example.com/x)."), "See the docs.");
+        assert_eq!(
+            clean("See [the docs](https://example.com/x)."),
+            "See the docs."
+        );
     }
 
     #[test]
