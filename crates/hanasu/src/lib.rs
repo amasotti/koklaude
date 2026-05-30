@@ -13,6 +13,7 @@
 mod engine;
 mod error;
 mod g2p;
+mod tokenizer;
 mod voice;
 
 pub use engine::{Audio, Engine};
