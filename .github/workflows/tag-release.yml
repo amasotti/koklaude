@@ -79,7 +79,7 @@ jobs:
       # No espeak-ng here: it's a runtime dependency (g2p shells out to it),
       # not needed to compile the binary.
       - name: Build release binary
-        run: cargo build --release -p koklaude
+        run: cargo build --release -p koklaude --locked
 
       - name: Package tarball
         run: |
