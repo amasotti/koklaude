@@ -35,16 +35,16 @@ pub struct Engine {
 impl Engine {
     /// Load the Kokoro model and a voice.
     ///
-    /// - `model_path` — the `kokoro-v1.0.onnx` weights.
-    /// - `voices_path` — the voices npz (`voices-v1.0.bin`).
+    /// - `model_path` — the Kokoro ONNX weights (`onnx/model.onnx`).
+    /// - `voices_dir` — directory of per-voice style files (`<name>.bin`).
     /// - `voice` — which voice to use, e.g. `"af_heart"`.
     /// - `speed` — pace multiplier (`1.0` = normal).
-    pub fn load(model_path: &Path, voices_path: &Path, voice: &str, speed: f32) -> Result<Self> {
+    pub fn load(model_path: &Path, voices_dir: &Path, voice: &str, speed: f32) -> Result<Self> {
         let session = open_session(model_path).map_err(|e| Error::ModelLoad(e.to_string()))?;
 
         Ok(Self {
             session: Mutex::new(session),
-            voice: Voice::load(voices_path, voice)?,
+            voice: Voice::load(voices_dir, voice)?,
             speed,
         })
     }
@@ -76,9 +76,10 @@ impl Engine {
         // single bad synth shouldn't permanently brick the engine.
         let mut session = self.session.lock().unwrap_or_else(|p| p.into_inner());
         let outputs = session
-            .run(ort::inputs!["tokens" => tokens, "style" => style, "speed" => speed])
+            .run(ort::inputs!["input_ids" => tokens, "style" => style, "speed" => speed])
             .map_err(infer_err)?;
-        let (_shape, samples) = outputs["audio"]
+        // Output is `waveform` f32 [1, num_samples]; we want the flat samples.
+        let (_shape, samples) = outputs["waveform"]
             .try_extract_tensor::<f32>()
             .map_err(infer_err)?;
 
@@ -123,12 +124,12 @@ mod tests {
             Err(_) => return,
         };
         let model = dir.join("kokoro-v1.0.onnx");
-        let voices = dir.join("voices-v1.0.bin");
+        let voices = dir.join("voices");
         let espeak = std::process::Command::new("espeak-ng")
             .arg("--version")
             .output()
             .is_ok();
-        if !model.exists() || !voices.exists() || !espeak {
+        if !model.exists() || !voices.join("af_heart.bin").exists() || !espeak {
             eprintln!("skipping synth_hello_world_is_audible: model/voices/espeak not present");
             return;
         }

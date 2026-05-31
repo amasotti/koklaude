@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 const HOME_ENV: &str = "KOKLAUDE_HOME";
 
 const MODEL_FILE: &str = "kokoro-v1.0.onnx";
-const VOICES_FILE: &str = "voices-v1.0.bin";
+const VOICES_DIR: &str = "voices";
 const CONFIG_FILE: &str = "config.toml";
 const SOCKET_FILE: &str = "daemon.sock";
 
@@ -63,8 +63,8 @@ impl Config {
         self.home.join(MODEL_FILE)
     }
 
-    pub fn voices_path(&self) -> PathBuf {
-        self.home.join(VOICES_FILE)
+    pub fn voices_dir(&self) -> PathBuf {
+        self.home.join(VOICES_DIR)
     }
 
     /// Unix socket the daemon binds and the hook client connects to.

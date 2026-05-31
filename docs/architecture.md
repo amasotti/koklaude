@@ -79,7 +79,7 @@ stale-socket recovery: [`daemon-and-sockets.md`](daemon-and-sockets.md).
 ```
 ~/.config/koklaude/            # state — relocatable via $KOKLAUDE_HOME
   ├─ kokoro-v1.0.onnx   model weights (downloaded by `init`)
-  ├─ voices-v1.0.bin    voice styles  (downloaded by `init`)
+  ├─ voices/            one style file per voice, <name>.bin (downloaded by `init`)
   ├─ config.toml        voice, speed, idle-timeout
   ├─ enabled            presence = speech on  (toggled by on/off)
   └─ daemon.sock        unix socket: hook ↔ daemon

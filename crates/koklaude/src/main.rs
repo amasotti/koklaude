@@ -107,7 +107,7 @@ fn say(text: &str, voice: Option<String>, speed: Option<f32>) -> anyhow::Result<
     if let Some(s) = speed {
         cfg.speed = s;
     }
-    let engine = Engine::load(&cfg.model_path(), &cfg.voices_path(), &cfg.voice, cfg.speed)
+    let engine = Engine::load(&cfg.model_path(), &cfg.voices_dir(), &cfg.voice, cfg.speed)
         .context("load engine (is the model present under ~/.config/koklaude/?)")?;
     let audio = engine.synth(text).context("synthesize text")?;
     playback::play(&audio)

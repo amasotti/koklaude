@@ -13,7 +13,10 @@ use std::path::PathBuf;
 
 use tracing::Subscriber;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
+use tracing_subscriber::Layer;
+use tracing_subscriber::filter::filter_fn;
 use tracing_subscriber::fmt::MakeWriter;
+use tracing_subscriber::layer::SubscriberExt;
 
 /// Override the log directory (tests), mirroring `config`'s `KOKLAUDE_HOME`.
 const LOG_DIR_ENV: &str = "KOKLAUDE_LOG_DIR";
@@ -45,12 +48,16 @@ fn subscriber<W>(writer: W) -> impl Subscriber
 where
     W: for<'a> MakeWriter<'a> + Send + Sync + 'static,
 {
-    tracing_subscriber::fmt()
+    let layer = tracing_subscriber::fmt::layer()
         .json()
         .with_writer(writer)
         .with_current_span(true) // carry the hook's session_id span
         .with_span_list(false)
-        .finish()
+        .with_filter(filter_fn(|meta| {
+            let t = meta.target();
+            t.starts_with("koklaude") || t.starts_with("hanasu")
+        }));
+    tracing_subscriber::registry().with(layer)
 }
 
 /// `$KOKLAUDE_LOG_DIR` if set, else `~/.koklaude/logs`.
@@ -129,6 +136,17 @@ mod tests {
         });
         let v: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
         assert_eq!(v["span"]["session_id"], "abc123");
+    }
+
+    #[test]
+    fn drops_dependency_targets() {
+        // `ort` and friends log through the same facade; only our events survive.
+        let line = capture(|| {
+            info!(target: "ort::logging", "noise");
+            info!(target: "koklaude::daemon", "kept");
+        });
+        assert!(line.contains("kept"));
+        assert!(!line.contains("noise"));
     }
 
     #[test]
