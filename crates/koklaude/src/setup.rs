@@ -25,10 +25,80 @@ use serde_json::{Value, json};
 use crate::config::{Config, write_default_config};
 use crate::toggle;
 
-/// Release assets to fetch — kokoro-onnx `model-files-v1.0`; see
-/// docs/prerequisites.md. (5d pairs each with its `Config` dest path.)
-pub const MODEL_URL: &str = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx";
-pub const VOICES_URL: &str = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin";
+/// Assets are fetched from the official community ONNX repo on Hugging Face,
+/// `onnx-community/Kokoro-82M-v1.0-ONNX` (model `onnx/model.onnx`; voices as
+/// per-file `voices/<name>.bin`). See docs/prerequisites.md.
+const HF_BASE: &str = "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main";
+
+/// Every voice in the pinned v1.0 repo — one `voices/<name>.bin` each. `init`
+/// downloads all of them so any voice works offline (`say --voice …`).
+pub const VOICES: &[&str] = &[
+    "af",
+    "af_alloy",
+    "af_aoede",
+    "af_bella",
+    "af_heart",
+    "af_jessica",
+    "af_kore",
+    "af_nicole",
+    "af_nova",
+    "af_river",
+    "af_sarah",
+    "af_sky",
+    "am_adam",
+    "am_echo",
+    "am_eric",
+    "am_fenrir",
+    "am_liam",
+    "am_michael",
+    "am_onyx",
+    "am_puck",
+    "am_santa",
+    "bf_alice",
+    "bf_emma",
+    "bf_isabella",
+    "bf_lily",
+    "bm_daniel",
+    "bm_fable",
+    "bm_george",
+    "bm_lewis",
+    "ef_dora",
+    "em_alex",
+    "em_santa",
+    "ff_siwis",
+    "hf_alpha",
+    "hf_beta",
+    "hm_omega",
+    "hm_psi",
+    "if_sara",
+    "im_nicola",
+    "jf_alpha",
+    "jf_gongitsune",
+    "jf_nezumi",
+    "jf_tebukuro",
+    "jm_kumo",
+    "pf_dora",
+    "pm_alex",
+    "pm_santa",
+    "zf_xiaobei",
+    "zf_xiaoni",
+    "zf_xiaoxiao",
+    "zf_xiaoyi",
+    "zm_yunjian",
+    "zm_yunxi",
+    "zm_yunxia",
+    "zm_yunyang",
+];
+
+/// URL for the Kokoro ONNX model weights.
+fn model_url() -> String {
+    format!("{HF_BASE}/onnx/model.onnx")
+}
+
+/// URL for voice `name`'s style file.
+fn voice_url(name: &str) -> String {
+    format!("{HF_BASE}/voices/{name}.bin")
+}
 
 const DOWNLOAD_BUF: usize = 64 * 1024;
 /// Redraw the stderr progress line roughly every this many bytes.
@@ -240,9 +310,16 @@ pub fn init(cfg: &Config) -> Result<()> {
     }
     std::fs::create_dir_all(&cfg.home).with_context(|| format!("create {:?}", cfg.home))?;
 
-    println!("fetching model + voices into {}…", cfg.home.display());
-    download(MODEL_URL, &cfg.model_path())?;
-    download(VOICES_URL, &cfg.voices_path())?;
+    println!(
+        "fetching model + {} voices into {}…",
+        VOICES.len(),
+        cfg.home.display()
+    );
+    download(&model_url(), &cfg.model_path())?;
+    let voices_dir = cfg.voices_dir();
+    for name in VOICES {
+        download(&voice_url(name), &voices_dir.join(format!("{name}.bin")))?;
+    }
 
     if write_default_config(&cfg.home)? {
         println!("wrote default config.toml");

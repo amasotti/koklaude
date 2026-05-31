@@ -29,30 +29,33 @@ espeak-ng --version
 
 ## 2. The Kokoro model + voices
 
-`koklaude init` downloads both automatically; the manual `curl` below is only for
-the spike or a hand setup. Both live under `~/.config/koklaude/` (koklaude's
-runtime home — see `docs/architecture.md`) and are **not** committed to the repo.
+`koklaude init` downloads everything automatically; the manual `curl` below is
+only for the spike or a hand setup. All assets live under `~/.config/koklaude/`
+(koklaude's runtime home — see `docs/architecture.md`) and are **not** committed
+to the repo.
 
-| File | What | Size |
+**Source:** the official community ONNX repo
+[`onnx-community/Kokoro-82M-v1.0-ONNX`](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX)
+on Hugging Face — model `onnx/model.onnx`, voices as one `voices/<name>.bin` each.
+
+| Path | What | Size |
 |---|---|---|
-| `kokoro-v1.0.onnx` | Kokoro-82M weights, fp32 | ~310 MB |
-| `voices-v1.0.bin` | 54 voice style vectors (npz) | ~28 MB |
+| `kokoro-v1.0.onnx` | Kokoro-82M weights, fp32 (`onnx/model.onnx`) | ~310 MB |
+| `voices/<name>.bin` | one style file per voice — 55 voices total | ~0.5 MB each (~28 MB all) |
 
 ```sh
-mkdir -p ~/.config/koklaude
-cd ~/.config/koklaude
+mkdir -p ~/.config/koklaude/voices
+base=https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main
 
-# Source: thewh1teagle/kokoro-onnx release `model-files-v1.0`.
-curl -fL -o kokoro-v1.0.onnx \
-  https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx
-curl -fL -o voices-v1.0.bin \
-  https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
+curl -fL -o ~/.config/koklaude/kokoro-v1.0.onnx "$base/onnx/model.onnx"
+# one voice (init fetches all 55):
+curl -fL -o ~/.config/koklaude/voices/af_heart.bin "$base/voices/af_heart.bin"
 ```
 
-**See list of voices**:
+**See list of voices** (after install):
 
 ```bash
-unzip -l ~/.config/koklaude/voices-v1.0.bin | grep -o '[a-z][a-z]_[a-z]*'
+ls ~/.config/koklaude/voices/ | sed 's/\.bin$//'
 ```
 
 ## 3. Build toolchain

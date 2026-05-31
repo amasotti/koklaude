@@ -30,7 +30,7 @@ pub fn run(cfg: &Config) -> Result<()> {
     let socket = cfg.socket_path();
     let listener = bind(&socket)?;
 
-    let engine = Engine::load(&cfg.model_path(), &cfg.voices_path(), &cfg.voice, cfg.speed)
+    let engine = Engine::load(&cfg.model_path(), &cfg.voices_dir(), &cfg.voice, cfg.speed)
         .context("load engine (is the model present under the koklaude home?)")?;
     info!(voice = %cfg.voice, "daemon started");
 
