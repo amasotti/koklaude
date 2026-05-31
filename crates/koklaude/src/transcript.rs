@@ -57,17 +57,39 @@ pub fn transcript_path_from_hook(stdin: &str) -> Result<PathBuf> {
     Ok(input.transcript_path)
 }
 
-/// Extract the last assistant turn's spoken text from a transcript JSONL.
-/// `None` if the turn has no speakable text (e.g. ended on a tool call).
-pub fn last_assistant_turn(jsonl: &str) -> Option<String> {
-    let entries: Vec<Entry> = jsonl
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        // Tolerate lines whose shape we don't model (titles, snapshots, ...).
-        .filter_map(|l| serde_json::from_str::<Entry>(l).ok())
+/// Outcome of parsing a transcript: the speakable text plus the signals that
+/// tell a partial flush (CLI raced the Stop hook) apart from a clean tool-only
+/// turn. `last_line_partial` true means the final non-empty line was broken JSON,
+/// i.e. the transcript is still being written, retry-read before trusting it.
+pub struct Turn {
+    pub text: Option<String>,
+    pub last_line_partial: bool,
+    pub dropped: usize,
+}
+
+/// Extract the last assistant turn's spoken text from a transcript JSONL, plus
+/// the partial-flush signals (see [`Turn`]). `text` is `None` if the turn has no
+/// speakable text (e.g. ended on a tool call).
+pub fn parse_turn(jsonl: &str) -> Turn {
+    let lines: Vec<&str> = jsonl.lines().filter(|l| !l.trim().is_empty()).collect();
+    let last_line_partial = lines
+        .last()
+        .is_some_and(|l| serde_json::from_str::<Entry>(l).is_err());
+
+    let mut dropped = 0;
+    let entries: Vec<Entry> = lines
+        .iter()
+        // Tolerate lines whose shape we don't model;
+        .filter_map(|l| match serde_json::from_str::<Entry>(l) {
+            Ok(e) => Some(e),
+            Err(_) => {
+                dropped += 1;
+                None
+            }
+        })
         .collect();
 
-    // Last real user prompt = the turn boundary. None → whole transcript.
+    // Last real user prompt = the turn boundary.
     let start = entries
         .iter()
         .rposition(is_user_prompt)
@@ -92,10 +114,12 @@ pub fn last_assistant_turn(jsonl: &str) -> Option<String> {
         }
     }
 
-    if texts.is_empty() {
-        return None;
+    let text = (!texts.is_empty()).then(|| texts.join("\n\n"));
+    Turn {
+        text,
+        last_line_partial,
+        dropped,
     }
-    Some(texts.join("\n\n"))
 }
 
 /// A genuine user turn (string content), not a tool-result (`type:"user"` too).
@@ -145,7 +169,7 @@ mod tests {
         // After the user prompt: the two text blocks, joined; thinking/tool skipped;
         // the tool_result user line does NOT reset the turn.
         assert_eq!(
-            last_assistant_turn(SAMPLE).as_deref(),
+            parse_turn(SAMPLE).text.as_deref(),
             Some("Let me check.\n\nHere is the answer.")
         );
     }
@@ -153,18 +177,53 @@ mod tests {
     #[test]
     fn ignores_unmodelled_lines() {
         let jsonl = "{\"type\":\"ai-title\",\"title\":\"x\"}\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"q\"}}\n{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Hi.\"}]}}";
-        assert_eq!(last_assistant_turn(jsonl).as_deref(), Some("Hi."));
+        assert_eq!(parse_turn(jsonl).text.as_deref(), Some("Hi."));
     }
 
     #[test]
     fn turn_ending_on_tool_use_has_no_text() {
         let jsonl = r#"{"type":"user","message":{"role":"user","content":"go"}}
 {"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash"}]}}"#;
-        assert_eq!(last_assistant_turn(jsonl), None);
+        assert_eq!(parse_turn(jsonl).text, None);
     }
 
     #[test]
     fn empty_transcript_is_none() {
-        assert_eq!(last_assistant_turn(""), None);
+        assert_eq!(parse_turn("").text, None);
+    }
+
+    #[test]
+    fn fully_parsed_turn_is_not_flagged_partial() {
+        let turn = parse_turn(SAMPLE);
+        assert_eq!(
+            turn.text.as_deref(),
+            Some("Let me check.\n\nHere is the answer.")
+        );
+        assert!(!turn.last_line_partial);
+        assert_eq!(turn.dropped, 0);
+    }
+
+    #[test]
+    fn truncated_final_line_flags_partial() {
+        // CLI fired Stop mid-flush: the final assistant line is incomplete JSON.
+        let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"q\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"the real ans";
+        let turn = parse_turn(jsonl);
+        assert!(turn.last_line_partial);
+        assert_eq!(turn.dropped, 1);
+        // The broken line is dropped → no speakable text yet.
+        assert_eq!(turn.text, None);
+    }
+
+    #[test]
+    fn unmodelled_lines_do_not_flag_partial() {
+        // A typed-but-unmodelled trailing line is valid JSON → not a partial flush.
+        let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"q\"}}\n\
+{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Hi.\"}]}}\n\
+{\"type\":\"ai-title\",\"title\":\"x\"}";
+        let turn = parse_turn(jsonl);
+        assert!(!turn.last_line_partial);
+        assert_eq!(turn.dropped, 0);
+        assert_eq!(turn.text.as_deref(), Some("Hi."));
     }
 }
