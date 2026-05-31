@@ -26,9 +26,9 @@ formatter):
 
 - `timestamp`, `level` — from `tracing`
 - `target` — the emitting module path (`koklaude::daemon`, `koklaude::hook`,
-  `koklaude::toggle`, …). This **is** the component: free, automatic, and
-  thread-correct (a process-wide span would not follow the daemon's worker
-  thread, where `spoke` and the synth/playback errors fire).
+  `koklaude` for CLI lifecycle events, …). This **is** the component: free,
+  automatic, and thread-correct (a process-wide span would not follow the
+  daemon's worker thread, where `spoke` and the synth/playback errors fire).
 - `fields.message` + event fields
 - `span.session_id` — present on hook events, which run inside a `session_id`
   span (the Stop-hook stdin carries it; it is also the transcript filename
@@ -91,7 +91,10 @@ Landed incrementally:
 **Hook** — `hook fired` (transcript, outcome = `Some(len)` / `None`, dropped,
 retries), within the `session_id` span.
 
-**CLI lifecycle** — `on` · `off` · `init` · `uninstall`.
+**CLI lifecycle** (emitted at the command seam in `main`, so each maps to one
+user invocation, not to the enable/disable steps `init`/`uninstall` reuse) —
+`speech enabled` (`on`) · `speech disabled` (`off`) · `init` · `uninstall`
+(purge).
 
 Deferred to v0.2 #4: queue `stop` / purge events (and `session_id` on daemon
 lines, once the protocol carries it).
