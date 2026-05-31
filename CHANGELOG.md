@@ -2,9 +2,39 @@
 
 All notable changes to this project will be documented in this file (created with git cliff).
 
+## [0.1.0] - 2026-05-31
+
+[Compare with last version](https://github.com/amasotti/koklaude/compare/fc35862351e6b74ad4520458b0b6e789f3b9bb3e..2e985d7475da772b6d4543c25f5f63893b1e6f40)
+### 🚀 Features
+
+
+- Add logging module ([75a6950](https://github.com/amasotti/koklaude/commit/75a69509cdb9c0eb7ae943ce4c6ae9c07bec8c5e))
+
+- Log hook fired events ([8235cc2](https://github.com/amasotti/koklaude/commit/8235cc25385a396e4d2e3deaf27b38bacc1c2de9))
+
+- Add logs for main cli events ([8129d1b](https://github.com/amasotti/koklaude/commit/8129d1ba658a7090c2328f6c7fd1a564a70007bb))
+
+- Switch to community onnx model on hf ([c9d7498](https://github.com/amasotti/koklaude/commit/c9d74989455a099064a66f6b33fcbbe644ea9f61))
+
+### 🐛 Bug Fixes
+
+
+- Download avoiding ipv6 blackhole at hf ([49ceb0d](https://github.com/amasotti/koklaude/commit/49ceb0dafca6e8450e85d90c5618c2c467cb5de5))
+
+### ⚙️ Miscellaneous Tasks
+
+
+- Increase version in cargo file for hanasu ([2c5e2b0](https://github.com/amasotti/koklaude/commit/2c5e2b0b2316c87863f0ab7bfe90605e3ea4228d))
+
+- Add workspace flag to justfile recipes ([0b2dbfe](https://github.com/amasotti/koklaude/commit/0b2dbfeaa92d3e914e5de059767dc34e2563b2d5))
+
+- Cleanup cargo.toml files ([2efccf2](https://github.com/amasotti/koklaude/commit/2efccf2690c081c571fbb71af97b20d259f5915a))
+
+- Fmt ([2e985d7](https://github.com/amasotti/koklaude/commit/2e985d7475da772b6d4543c25f5f63893b1e6f40))
+
 ## [0.0.3] - 2026-05-31
 
-[Compare with last version](https://github.com/amasotti/koklaude/compare/6f21201b3f753bc6ef40fbf1b11e9eb0085744f8..a006422bf59f62c6620473af87c1b7860b201a08)
+[Compare with last version](https://github.com/amasotti/koklaude/compare/6f21201b3f753bc6ef40fbf1b11e9eb0085744f8..fc35862351e6b74ad4520458b0b6e789f3b9bb3e)
 ### 🐛 Bug Fixes
 
 
@@ -16,6 +46,8 @@ All notable changes to this project will be documented in this file (created wit
 
 
 - Update cargo.lock ([461f6fc](https://github.com/amasotti/koklaude/commit/461f6fc8f4b1d0e0d3112d15babc404318c7f6d3))
+
+- Release v0.0.3 ([fc35862](https://github.com/amasotti/koklaude/commit/fc35862351e6b74ad4520458b0b6e789f3b9bb3e))
 
 ## [0.0.2] - 2026-05-30
 
