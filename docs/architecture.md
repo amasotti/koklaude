@@ -93,7 +93,7 @@ Paths are overridable by environment variable; the full list is in the README's
 
 ## Failure policy
 
-The hook must never block or fail Claude Code. Every error path — model missing, daemon unreachable, synth failure — is logged to stderr and the hook still exits `0`. Worst case: silence, never a stuck assistant.
+The hook must never block or fail Claude Code. Every error path — model missing, daemon unreachable, synth failure — is logged and the hook still exits `0`. Worst case: silence, never a stuck assistant. Because that silence used to be invisible (the detached daemon's stderr goes to `/dev/null`), every hook fire, lifecycle action, and daemon synth/playback error is also written to a persistent JSON log under `~/.koklaude/logs/` — see [`logging.md`](logging.md).
 
 ## Extensibility
 

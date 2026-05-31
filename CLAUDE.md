@@ -10,15 +10,11 @@ Shipped and working on macOS (`init` → daemon → Stop hook). History and the
 next-version list: [`docs/plan.md`](docs/plan.md).
 
 ## Working with me (hard rules)
-- **Never commit, never delete files.** Toni does these. Offer, don't execute.
+- **Never commit, never delete files.** The user does these. Offer, don't execute.
 - **Small, reviewable slices.** When asked for X, do X — don't run ahead into
   implementation. No overstepping, no over-engineering (KISS / YAGNI).
-- **Solo project** (until stated otherwise): private repo, used only by Toni. No
-  contributor guidelines, no backward-compat burden — don't add them.
-- **Prove claims with evidence.** Don't assert an API shape, a schema, or "it
-  works" — verify it (run the command, read the source, check the doc) and show
-  the proof. Only paste commands you actually ran. Verbose-but-real over
-  clean-but-hallucinated.
+- **Prove claims with evidence.** Don't assert an API shape, a schema, or "it works" — verify it (run the command, read the source, check the doc) and show
+  the proof. Only paste commands you actually ran.
 
 ## How we work (the loop)
 This is the rhythm that built every phase — keep it:
