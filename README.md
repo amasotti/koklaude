@@ -129,6 +129,18 @@ no daemon, no hook, no Claude involved.
 koklaude say "Local, offline text to speech in one command."
 ```
 
+### Troubleshooting
+
+If you change `voice` or `speed` in `config.toml` but still hear the old voice,
+the warm daemon is probably still running with the previous config. Restart it:
+
+```bash
+pkill -f 'koklaude daemon'
+rm -f ~/.config/koklaude/daemon.sock
+```
+
+The next hook request will spawn a fresh daemon and load the new config.
+
 ---
 
 ## Why *another* TTS-for-Claude project
