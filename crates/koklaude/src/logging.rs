@@ -62,22 +62,18 @@ fn log_dir() -> PathBuf {
     PathBuf::from(home).join(".koklaude/logs")
 }
 
+/// Test-only capture of the JSON subscriber, shared with other modules' tests
+/// (the global default can be set only once per process, so they capture via a
+/// scoped `with_default` instead).
 #[cfg(test)]
-mod tests {
+pub(crate) mod test_support {
     use super::*;
     use std::io;
     use std::sync::{Arc, Mutex};
-    use tracing::{info, info_span};
 
     /// A `MakeWriter` that captures everything written into a shared buffer.
     #[derive(Clone, Default)]
     struct Buffer(Arc<Mutex<Vec<u8>>>);
-
-    impl Buffer {
-        fn contents(&self) -> String {
-            String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
-        }
-    }
 
     impl io::Write for Buffer {
         fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
@@ -96,16 +92,25 @@ mod tests {
         }
     }
 
+    /// Run `f` with the JSON subscriber active and return everything it logged.
+    pub(crate) fn capture(f: impl FnOnce()) -> String {
+        let buf = Buffer::default();
+        tracing::subscriber::with_default(subscriber(buf.clone()), f);
+        String::from_utf8(buf.0.lock().unwrap().clone()).unwrap()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use test_support::capture;
+    use tracing::{info, info_span};
+
     // Probe the real JSON shape — assert against what tracing-subscriber actually
     // emits, not a guessed schema.
     #[test]
     fn emits_one_json_object_with_level_timestamp_and_fields() {
-        let buf = Buffer::default();
-        tracing::subscriber::with_default(subscriber(buf.clone()), || {
-            info!(chars = 214, synth_ms = 92, "spoke");
-        });
-
-        let line = buf.contents();
+        let line = capture(|| info!(chars = 214, synth_ms = 92, "spoke"));
         let v: serde_json::Value =
             serde_json::from_str(line.trim()).expect("one valid JSON object per line");
         assert_eq!(v["level"], "INFO");
@@ -117,14 +122,12 @@ mod tests {
 
     #[test]
     fn event_carries_the_session_span_field() {
-        let buf = Buffer::default();
-        tracing::subscriber::with_default(subscriber(buf.clone()), || {
+        let line = capture(|| {
             let span = info_span!("turn", session_id = "abc123");
             let _g = span.enter();
             info!("hook fired");
         });
-
-        let v: serde_json::Value = serde_json::from_str(buf.contents().trim()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
         assert_eq!(v["span"]["session_id"], "abc123");
     }
 

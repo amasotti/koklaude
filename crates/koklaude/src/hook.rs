@@ -12,6 +12,7 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use tracing::{info, info_span};
 
 use crate::config::Config;
 use crate::{clean, client, toggle, transcript};
@@ -44,9 +45,17 @@ fn speak_reply() -> Result<()> {
     std::io::stdin()
         .read_to_string(&mut stdin)
         .context("read hook stdin")?;
-    let path = transcript::transcript_path_from_hook(&stdin)?;
+    let input = transcript::parse_hook_input(&stdin)?;
 
-    let Some(text) = reply_to_speak(&path)? else {
+    // Tag every event in this turn with the session, so the log is per-session
+    // greppable (the daemon, session-blind, correlates by timestamp until #4).
+    let span = info_span!(
+        "turn",
+        session_id = input.session_id.as_deref().unwrap_or("unknown")
+    );
+    let _guard = span.enter();
+
+    let Some(text) = reply_to_speak(&input.transcript_path)? else {
         return Ok(()); // nothing worth speaking
     };
     client::send(&cfg.socket_path(), &text)
@@ -60,28 +69,29 @@ fn speak_reply() -> Result<()> {
 /// backoff before giving up; a clean tool-only turn never retries.
 fn reply_to_speak(path: &Path) -> Result<Option<String>> {
     let mut turn = read_turn(path)?;
-    let mut attempts = 0;
-    while turn.last_line_partial && attempts < READ_RETRIES {
+    let mut retries = 0;
+    while turn.last_line_partial && retries < READ_RETRIES {
         thread::sleep(READ_INTERVAL);
-        attempts += 1;
+        retries += 1;
         turn = read_turn(path)?;
     }
 
-    // Diagnosable event (until the #2 log module lands, stderr is the only sink).
-    if turn.dropped > 0 || attempts > 0 {
-        eprintln!(
-            "koklaude hook: transcript {path:?} text={:?} dropped={} retries={}",
-            turn.text.as_deref().map(str::len),
-            turn.dropped,
-            attempts,
-        );
-    }
+    let spoken = turn
+        .text
+        .as_deref()
+        .map(clean::clean)
+        .filter(|s| !s.trim().is_empty());
 
-    let Some(raw) = turn.text else {
-        return Ok(None);
-    };
-    let spoken = clean::clean(&raw);
-    Ok((!spoken.trim().is_empty()).then_some(spoken))
+    // Every fire is a diagnosable event: did we speak, drop lines, or retry?
+    info!(
+        transcript = %path.display(),
+        outcome = ?spoken.as_deref().map(str::len),
+        dropped = turn.dropped,
+        retries,
+        "hook fired",
+    );
+
+    Ok(spoken)
 }
 
 /// Read and parse the transcript at `path` into a [`transcript::Turn`].
@@ -156,5 +166,27 @@ mod tests {
         let path = scratch_transcript("stuck", PARTIAL);
         let out = reply_to_speak(&path).unwrap();
         assert_eq!(out, None);
+    }
+
+    #[test]
+    fn logs_hook_fired_with_outcome_inside_session_span() {
+        let path = scratch_transcript("logged", TRANSCRIPT);
+        let line = crate::logging::test_support::capture(|| {
+            let _g = info_span!("turn", session_id = "sess-1").entered();
+            reply_to_speak(&path).unwrap();
+        });
+
+        let v: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
+        assert_eq!(v["fields"]["message"], "hook fired");
+        assert_eq!(v["span"]["session_id"], "sess-1");
+        assert_eq!(v["fields"]["dropped"], 0);
+        assert_eq!(v["fields"]["retries"], 0);
+        // outcome is a Debug-rendered Option<usize>: Some(<len>) here.
+        assert!(
+            v["fields"]["outcome"]
+                .as_str()
+                .unwrap()
+                .starts_with("Some(")
+        );
     }
 }

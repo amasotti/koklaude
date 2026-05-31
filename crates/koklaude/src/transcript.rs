@@ -14,10 +14,14 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
-/// Stop-hook stdin payload (only the field we need).
+/// Stop-hook stdin payload (the fields we use).
 #[derive(Debug, Deserialize)]
-struct HookInput {
-    transcript_path: PathBuf,
+pub struct HookInput {
+    pub transcript_path: PathBuf,
+    /// Claude session id (also the transcript filename stem). Optional so a
+    /// minimal/legacy payload still parses; used to tag logs.
+    #[serde(default)]
+    pub session_id: Option<String>,
 }
 
 /// One transcript JSONL line (the subset we read).
@@ -51,10 +55,9 @@ struct Block {
     text: Option<String>,
 }
 
-/// Parse the Stop-hook stdin JSON and return the transcript path.
-pub fn transcript_path_from_hook(stdin: &str) -> Result<PathBuf> {
-    let input: HookInput = serde_json::from_str(stdin).context("parse Stop-hook input JSON")?;
-    Ok(input.transcript_path)
+/// Parse the Stop-hook stdin JSON into its [`HookInput`].
+pub fn parse_hook_input(stdin: &str) -> Result<HookInput> {
+    serde_json::from_str(stdin).context("parse Stop-hook input JSON")
 }
 
 /// Outcome of parsing a transcript: the speakable text plus the signals that
@@ -138,18 +141,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reads_transcript_path() {
+    fn reads_transcript_path_and_session_id() {
         let stdin =
             r#"{"session_id":"abc","transcript_path":"/tmp/x.jsonl","hook_event_name":"Stop"}"#;
-        assert_eq!(
-            transcript_path_from_hook(stdin).unwrap(),
-            PathBuf::from("/tmp/x.jsonl")
-        );
+        let input = parse_hook_input(stdin).unwrap();
+        assert_eq!(input.transcript_path, PathBuf::from("/tmp/x.jsonl"));
+        assert_eq!(input.session_id.as_deref(), Some("abc"));
+    }
+
+    #[test]
+    fn absent_session_id_is_none() {
+        let input = parse_hook_input(r#"{"transcript_path":"/tmp/x.jsonl"}"#).unwrap();
+        assert_eq!(input.session_id, None);
     }
 
     #[test]
     fn missing_transcript_path_errors() {
-        assert!(transcript_path_from_hook(r#"{"session_id":"abc"}"#).is_err());
+        assert!(parse_hook_input(r#"{"session_id":"abc"}"#).is_err());
     }
 
     // Realistic JSONL: a prior turn, then user prompt, then the final turn
