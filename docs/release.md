@@ -31,7 +31,7 @@ binary.
   a GitHub *pre-release* automatically (the workflow checks for a `-`).
 - **Only `aarch64-apple-darwin` today.** The runner (`macos-14`) is Apple
   Silicon and builds natively. x86_64 / Linux / Windows are out of scope while
-  playback is macOS-`afplay`-only (see `docs/plan.md` → Later).
+  playback is macOS-`afplay`-only.
 - **`Cargo.lock` is intentionally not bumped** in the release PR. Regenerating
   it (`cargo generate-lockfile`) rebuilds the whole dep graph and busts CI
   caches for zero benefit here; the lockfile's local-package version is
