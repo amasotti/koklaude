@@ -77,13 +77,19 @@ stale-socket recovery: [`daemon-and-sockets.md`](daemon-and-sockets.md).
 ## Filesystem layout
 
 ```
-~/.config/koklaude/
-  ├─ kokoro.onnx     model weights (downloaded by `init`)
-  ├─ voices.bin      voice styles  (downloaded by `init`)
-  ├─ config.toml     voice, speed, idle-timeout
-  ├─ enabled         presence = speech on  (toggled by on/off)
-  └─ daemon.sock     unix socket: hook ↔ daemon
+~/.config/koklaude/            # state — relocatable via $KOKLAUDE_HOME
+  ├─ kokoro-v1.0.onnx   model weights (downloaded by `init`)
+  ├─ voices-v1.0.bin    voice styles  (downloaded by `init`)
+  ├─ config.toml        voice, speed, idle-timeout
+  ├─ enabled            presence = speech on  (toggled by on/off)
+  └─ daemon.sock        unix socket: hook ↔ daemon
+
+~/.koklaude/logs/              # runtime logs — relocatable via $KOKLAUDE_LOG_DIR
+  └─ koklaude.YYYY-MM-DD.jsonl daily JSON log (see logging.md)
 ```
+
+Paths are overridable by environment variable; the full list is in the README's
+[Configuration](../README.md#configuration) section.
 
 ## Failure policy
 

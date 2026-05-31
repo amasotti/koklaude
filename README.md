@@ -48,22 +48,9 @@ So koklaude rebuilds what `kokoroxide` set out to be — a clean Kokoro engine o
 
 ## How it works (one binary)
 
-```mermaid
-flowchart TD
-    CC[Claude Code] -->|Stop hook| HOOK[koklaude hook]
-    HOOK -->|read transcript, strip code & markdown| TEXT[clean text]
-    TEXT -->|unix socket| DAEMON[koklaude daemon<br/>model held warm · play queue]
-    DAEMON --> ENGINE
-
-    subgraph ENGINE[hanasu engine]
-        direction LR
-        P[espeak-ng<br/>text to phonemes] --> T[tokenize]
-        T --> O[ort 2.0<br/>Kokoro-82M.onnx]
-        O --> S[f32 samples]
-    end
-
-    S --> AUDIO[WAV to afplay]
-```
+One Stop hook, a warm daemon, and the `hanasu` engine. The full flow — from
+Claude's reply to audio — is diagrammed in
+[`docs/architecture.md`](docs/architecture.md).
 
 - **`espeak-ng`** (invoked as an external CLI) — grapheme→phoneme for arbitrary words, names, jargon, and many languages. This is what lets koklaude pronounce real-world, non-English, domain-heavy text correctly. You install it yourself ([prerequisites](docs/prerequisites.md)); calling it arm's-length keeps koklaude MIT.
 - **`ort` 2.0** — runs the Kokoro ONNX model.
@@ -122,17 +109,9 @@ text-to-speech command in its own right (and how we validate the engine).
 koklaude say "Local, offline text to speech in one command."
 ```
 
-Voice and speed are configurable — globally via `~/.config/koklaude/config.toml`,
-and per-call via `say --voice <name> --speed <n>` (a flag overrides the file).
-
-```toml
-# ~/.config/koklaude/config.toml — both keys optional; omitted = built-in default
-voice = "af_heart"   # any of the 54 Kokoro voices (e.g. am_adam, bf_emma)
-speed = 1.0          # pace multiplier; 1.0 = normal
-```
-
-`koklaude init` writes this file for you; edit it any time. Precedence:
-`--flag` > `config.toml` > built-in default (`af_heart`, speed `1.0`).
+Voice and speed are configurable — globally via `config.toml` and per-call via
+`say --voice <name> --speed <n>` (a flag overrides the file). See
+[Configuration](#configuration).
 
 ### Prerequisites
 
@@ -141,12 +120,42 @@ for you. The one thing it can't install is **`espeak-ng`** (the grapheme→phone
 backend, kept arm's-length to stay MIT) — install that yourself first, e.g.
 `brew install espeak-ng`. Details: [`docs/prerequisites.md`](docs/prerequisites.md).
 
+## Configuration
+
+Speech settings live in a TOML file; paths are overridable with environment
+variables.
+
+### `config.toml`
+
+At `~/.config/koklaude/config.toml` (written by `koklaude init`). Every key is
+optional — omit one and the built-in default applies. Edit any time.
+
+```toml
+voice = "af_heart"          # any of the 54 Kokoro voices (e.g. am_adam, bf_emma)
+speed = 1.0                 # pace multiplier; 1.0 = normal
+idle_timeout_minutes = 30   # daemon frees the model after this long idle
+```
+
+`say --voice <name> --speed <n>` overrides the file per call. Precedence:
+`--flag` > `config.toml` > built-in default.
+
+### Environment variables
+
+| Variable | Default | What it controls |
+|---|---|---|
+| `KOKLAUDE_HOME` | `~/.config/koklaude` | koklaude's home — model, voices, `config.toml`, the `enabled` flag, and the daemon socket. Set it to relocate all state. |
+| `KOKLAUDE_LOG_DIR` | `~/.koklaude/logs` | Where the daily JSON logs are written. See [`docs/logging.md`](docs/logging.md). |
+| `CLAUDE_CONFIG_DIR` | `~/.claude` | Claude Code's config dir — where `init`/`uninstall` add/remove the Stop hook in `settings.json`. (Claude Code's own variable; koklaude honours it.) |
+
+Logs sit under `~/.koklaude/`, **not** the config home — they're runtime output,
+not configuration.
+
 ## Design at a glance
 
 - **Speaks** the full reply with code blocks stripped (code read aloud is noise).
 - **Never drops text**: overlapping replies queue rather than interrupt — losing half a sentence is worse than slightly stale audio.
 - **Never blocks Claude Code**: any TTS error is logged and swallowed; the hook always exits cleanly.
-- Everything koklaude owns lives under `~/.config/koklaude/`.
+- State lives under `~/.config/koklaude/` (model, voices, config, socket); logs under `~/.koklaude/logs/`.
 
 ## Beyond Claude Code
 
