@@ -290,9 +290,12 @@ fn strip_our_hooks(stop: &mut Vec<Value>) -> usize {
     removed
 }
 
-/// A fresh Stop group registering `exe` in exec form (no shell → spaces safe).
+/// A fresh Stop group registering `exe` in shell form. Claude Code passes the
+/// `command` string to `sh -c`; the path is double-quoted so spaces in the
+/// binary path are handled correctly.
 fn hook_group(exe: &Path) -> Value {
-    json!({ "hooks": [{ "type": "command", "command": exe.to_string_lossy(), "args": ["hook"] }] })
+    let cmd = format!("\"{}\" hook", exe.to_string_lossy());
+    json!({ "hooks": [{ "type": "command", "command": cmd }] })
 }
 
 /// Does this path's final component equal `koklaude`?
@@ -592,12 +595,12 @@ mod tests {
     // --- merge -----------------------------------------------------------
 
     #[test]
-    fn merge_into_empty_settings_uses_exec_form() {
+    fn merge_into_empty_settings_uses_shell_form() {
         let got = merge_stop_hook(json!({}), Path::new(EXE)).unwrap();
         assert_eq!(
             got,
             json!({ "hooks": { "Stop": [{ "hooks": [
-                { "type": "command", "command": EXE, "args": ["hook"] }
+                { "type": "command", "command": format!("\"{}\" hook", EXE) }
             ] }] } })
         );
     }
@@ -630,19 +633,19 @@ mod tests {
         let second = merge_stop_hook(first, Path::new("/new/place/koklaude")).unwrap();
         let ours = our_hooks(&second);
         assert_eq!(ours.len(), 1, "exactly one koklaude hook after reinstall");
-        assert_eq!(ours[0]["command"], "/new/place/koklaude"); // the current path won
+        assert_eq!(ours[0]["command"], "\"/new/place/koklaude\" hook"); // the current path won
     }
 
-    /// #2 regression: a binary path with spaces is stored verbatim (exec form,
-    /// no shell, no quoting) and still recognized as ours.
+    /// #2 regression: a binary path with spaces is quoted in shell form so `sh -c`
+    /// passes the full path as one argument.
     #[test]
     fn merge_handles_binary_path_with_spaces() {
         let exe = Path::new("/opt/my tools/bin/koklaude");
         let got = merge_stop_hook(json!({}), exe).unwrap();
         let ours = our_hooks(&got);
         assert_eq!(ours.len(), 1);
-        assert_eq!(ours[0]["command"], "/opt/my tools/bin/koklaude");
-        assert_eq!(ours[0]["args"], json!(["hook"]));
+        assert_eq!(ours[0]["command"], "\"/opt/my tools/bin/koklaude\" hook");
+        assert!(ours[0].get("args").is_none());
     }
 
     #[test]
