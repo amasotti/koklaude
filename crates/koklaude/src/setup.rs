@@ -26,6 +26,7 @@ use tracing::info;
 use ureq::Agent;
 use ureq::config::{Config as UreqConfig, IpFamily};
 
+use crate::Adapter;
 use crate::config::{Config, write_default_config};
 use crate::toggle;
 
@@ -236,8 +237,26 @@ pub fn merge_stop_hook(mut settings: Value, exe: &Path) -> Result<Value> {
         Value::Array(a) => a,
         _ => bail!("`Stop` is present but is not a JSON array"),
     };
-    strip_our_hooks(stop);
-    stop.push(hook_group(exe));
+    strip_our_hooks(stop, "hook");
+    stop.push(hook_group(exe, "hook", None));
+    Ok(settings)
+}
+
+/// Register koklaude's Codex Stop hook in `hooks.json`.
+pub fn merge_codex_stop_hook(mut settings: Value, exe: &Path) -> Result<Value> {
+    let Value::Object(root) = &mut settings else {
+        bail!("hooks file is not a JSON object");
+    };
+    let hooks = match root.entry("hooks").or_insert_with(|| json!({})) {
+        Value::Object(m) => m,
+        _ => bail!("`hooks` is present but is not a JSON object"),
+    };
+    let stop = match hooks.entry("Stop").or_insert_with(|| json!([])) {
+        Value::Array(a) => a,
+        _ => bail!("`Stop` is present but is not a JSON array"),
+    };
+    strip_our_hooks(stop, "codex-hook");
+    stop.push(hook_group(exe, "codex-hook", Some("koklaude speaking")));
     Ok(settings)
 }
 
@@ -262,24 +281,58 @@ pub fn remove_stop_hook(mut settings: Value) -> Result<(Value, usize)> {
         Some(_) => bail!("`Stop` is present but is not a JSON array"),
     };
 
-    let removed = strip_our_hooks(stop);
-    if stop.is_empty() {
-        hooks.remove("Stop");
+    let removed = strip_our_hooks(stop, "hook");
+    prune_empty_hooks(root, "Stop", removed);
+    Ok((settings, removed))
+}
+
+/// Remove koklaude's Codex Stop hook from `hooks.json`.
+pub fn remove_codex_stop_hook(mut settings: Value) -> Result<(Value, usize)> {
+    let Value::Object(root) = &mut settings else {
+        bail!("hooks file is not a JSON object");
+    };
+    let hooks = match root.get_mut("hooks") {
+        None => return Ok((settings, 0)),
+        Some(Value::Object(m)) => m,
+        Some(_) => bail!("`hooks` is present but is not a JSON object"),
+    };
+    let stop = match hooks.get_mut("Stop") {
+        None => return Ok((settings, 0)),
+        Some(Value::Array(a)) => a,
+        Some(_) => bail!("`Stop` is present but is not a JSON array"),
+    };
+
+    let removed = strip_our_hooks(stop, "codex-hook");
+    prune_empty_hooks(root, "Stop", removed);
+    Ok((settings, removed))
+}
+
+fn prune_empty_hooks(root: &mut serde_json::Map<String, Value>, event: &str, removed: usize) {
+    if removed == 0 {
+        return;
+    }
+    let Some(Value::Object(hooks)) = root.get_mut("hooks") else {
+        return;
+    };
+    if hooks
+        .get(event)
+        .is_some_and(|v| v.as_array().is_some_and(Vec::is_empty))
+    {
+        hooks.remove(event);
     }
     if hooks.is_empty() {
         root.remove("hooks");
     }
-    Ok((settings, removed))
 }
 
 /// Drop every koklaude hook from each Stop group; drop a group left empty. Foreign
 /// group shapes are left untouched. Returns how many koklaude hooks were removed.
-fn strip_our_hooks(stop: &mut Vec<Value>) -> usize {
+fn strip_our_hooks(stop: &mut Vec<Value>, subcommand: &str) -> usize {
     let mut removed = 0;
     stop.retain_mut(|group| match group.get_mut("hooks") {
         Some(Value::Array(inner)) => {
             inner.retain(|h| {
-                let ours = is_koklaude_hook(h);
+                let ours = is_koklaude_hook(h, subcommand);
                 removed += ours as usize;
                 !ours
             });
@@ -293,8 +346,17 @@ fn strip_our_hooks(stop: &mut Vec<Value>) -> usize {
 /// A fresh Stop group registering `exe` in shell form. Claude Code executes the
 /// `command` string, so the subcommand must be present there; separate `args`
 /// are ignored by the hook runner.
-fn hook_group(exe: &Path) -> Value {
-    json!({ "hooks": [{ "type": "command", "command": format!("{} hook", shell_quote(exe)) }] })
+fn hook_group(exe: &Path, subcommand: &str, status_message: Option<&str>) -> Value {
+    let mut entry = json!({
+        "type": "command",
+        "command": format!("{} {subcommand}", shell_quote(exe)),
+    });
+    if let Some(status) = status_message
+        && let Value::Object(obj) = &mut entry
+    {
+        obj.insert("statusMessage".to_string(), json!(status));
+    }
+    json!({ "hooks": [entry] })
 }
 
 /// POSIX single-quote `path` for Claude Code's shell-form hook command.
@@ -321,7 +383,7 @@ fn basename_is_koklaude(path: &str) -> bool {
 /// The executable check also handles paths with spaces by looking inside a leading
 /// double-quote pair when present. Path-independent — a move/reinstall never
 /// orphans it.
-fn is_koklaude_hook(entry: &Value) -> bool {
+fn is_koklaude_hook(entry: &Value, subcommand: &str) -> bool {
     let Some(command) = entry.get("command").and_then(Value::as_str) else {
         return false;
     };
@@ -333,9 +395,9 @@ fn is_koklaude_hook(entry: &Value) -> bool {
     let arg_has_hook = entry
         .get("args")
         .and_then(Value::as_array)
-        .is_some_and(|a| a.iter().filter_map(Value::as_str).any(|s| s == "hook"));
-    let command_tail_has_hook = tail.split_whitespace().any(|t| t == "hook")
-        || command.split_whitespace().skip(1).any(|t| t == "hook");
+        .is_some_and(|a| a.iter().filter_map(Value::as_str).any(|s| s == subcommand));
+    let command_tail_has_hook = tail.split_whitespace().any(|t| t == subcommand)
+        || command.split_whitespace().skip(1).any(|t| t == subcommand);
 
     exe_is_koklaude && (arg_has_hook || command_tail_has_hook)
 }
@@ -394,7 +456,7 @@ fn shell_first_word(command: &str) -> Option<(String, &str)> {
 /// One-command setup: detect espeak → fetch model + voices → write config →
 /// register the Stop hook → enable. Idempotent — re-running fills only what's
 /// missing (downloads skip, config is kept, the hook merge dedupes).
-pub fn init(cfg: &Config) -> Result<()> {
+pub fn init(cfg: &Config, adapter: Adapter) -> Result<()> {
     let espeak = espeak_installed();
     if !espeak {
         eprintln!("⚠ espeak-ng not on PATH — koklaude can't speak until it's installed:");
@@ -435,14 +497,22 @@ pub fn init(cfg: &Config) -> Result<()> {
     }
 
     let exe = std::env::current_exe().context("locate the koklaude binary")?;
-    let settings = claude_settings_path()?;
-    rewrite_settings(&settings, |s| merge_stop_hook(s, &exe))?;
-    println!("registered Stop hook in {}", settings.display());
+    if matches!(adapter, Adapter::Claude | Adapter::All) {
+        let settings = claude_settings_path()?;
+        rewrite_settings(&settings, |s| merge_stop_hook(s, &exe))?;
+        println!("registered Claude Stop hook in {}", settings.display());
+    }
+    if matches!(adapter, Adapter::Codex | Adapter::All) {
+        let hooks = codex_hooks_path()?;
+        rewrite_settings(&hooks, |s| merge_codex_stop_hook(s, &exe))?;
+        println!("registered Codex Stop hook in {}", hooks.display());
+        println!("Codex may require you to run /hooks once and trust the koklaude Stop hook.");
+    }
 
     toggle::enable(&cfg.home)?;
     // Don't claim "ready" if the engine can't actually run.
     if espeak {
-        println!("✓ koklaude ready — Claude will speak its replies.");
+        println!("✓ koklaude ready — configured assistant(s) will speak replies.");
     } else {
         println!("✓ koklaude installed — install espeak-ng (above) to activate speech.");
     }
@@ -452,22 +522,46 @@ pub fn init(cfg: &Config) -> Result<()> {
 /// Remove koklaude's Stop hook and disable speech, leaving every other Claude Code
 /// hook intact. With `purge`, also delete the koklaude home (model, voices, config)
 /// — off by default, since re-downloading is expensive.
-pub fn uninstall(home: &Path, purge: bool) -> Result<()> {
-    let settings = claude_settings_path()?;
-    if settings.exists() {
-        let mut removed = 0;
-        rewrite_settings(&settings, |s| {
-            let (s, n) = remove_stop_hook(s)?;
-            removed = n;
-            Ok(s)
-        })?;
-        if removed > 0 {
-            println!("removed koklaude Stop hook from {}", settings.display());
-        } else {
-            println!(
-                "no koklaude Stop hook found in {} — nothing to remove",
-                settings.display()
-            );
+pub fn uninstall(home: &Path, adapter: Adapter, purge: bool) -> Result<()> {
+    if matches!(adapter, Adapter::Claude | Adapter::All) {
+        let settings = claude_settings_path()?;
+        if settings.exists() {
+            let mut removed = 0;
+            rewrite_settings(&settings, |s| {
+                let (s, n) = remove_stop_hook(s)?;
+                removed = n;
+                Ok(s)
+            })?;
+            if removed > 0 {
+                println!(
+                    "removed koklaude Claude Stop hook from {}",
+                    settings.display()
+                );
+            } else {
+                println!(
+                    "no koklaude Claude Stop hook found in {} — nothing to remove",
+                    settings.display()
+                );
+            }
+        }
+    }
+    if matches!(adapter, Adapter::Codex | Adapter::All) {
+        let hooks = codex_hooks_path()?;
+        if hooks.exists() {
+            let mut removed = 0;
+            rewrite_settings(&hooks, |s| {
+                let (s, n) = remove_codex_stop_hook(s)?;
+                removed = n;
+                Ok(s)
+            })?;
+            if removed > 0 {
+                println!("removed koklaude Codex Stop hook from {}", hooks.display());
+            } else {
+                println!(
+                    "no koklaude Codex Stop hook found in {} — nothing to remove",
+                    hooks.display()
+                );
+            }
         }
     }
     toggle::disable(home)?;
@@ -516,6 +610,17 @@ fn claude_settings_path() -> Result<PathBuf> {
     Ok(dir.join("settings.json"))
 }
 
+/// Path to Codex's `hooks.json` — `$CODEX_HOME` or `~/.codex`.
+fn codex_hooks_path() -> Result<PathBuf> {
+    let dir = match std::env::var_os("CODEX_HOME") {
+        Some(d) => PathBuf::from(d),
+        None => dirs::home_dir()
+            .context("locate home directory")?
+            .join(".codex"),
+    };
+    Ok(dir.join("hooks.json"))
+}
+
 /// Read `path` (or `{}` if absent), apply `f`, write back atomically. A malformed
 /// existing file errors out rather than being clobbered.
 fn rewrite_settings(path: &Path, f: impl FnOnce(Value) -> Result<Value>) -> Result<()> {
@@ -549,7 +654,7 @@ mod tests {
     const EXE: &str = "/usr/local/bin/koklaude";
 
     /// Every koklaude hook entry across all Stop groups in `settings`.
-    fn our_hooks(settings: &Value) -> Vec<&Value> {
+    fn our_hooks<'a>(settings: &'a Value, subcommand: &str) -> Vec<&'a Value> {
         settings
             .get("hooks")
             .and_then(|h| h.get("Stop"))
@@ -558,10 +663,14 @@ mod tests {
                 stop.iter()
                     .filter_map(|g| g.get("hooks").and_then(Value::as_array))
                     .flatten()
-                    .filter(|h| is_koklaude_hook(h))
+                    .filter(|h| is_koklaude_hook(h, subcommand))
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    fn codex_hooks(settings: &Value) -> Vec<&Value> {
+        our_hooks(settings, "codex-hook")
     }
 
     /// Per-test scratch dir under temp (no env mutation → no test races).
@@ -628,7 +737,7 @@ mod tests {
         rewrite_settings(&path, |s| merge_stop_hook(s, Path::new(EXE))).unwrap();
         let reg: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(reg["model"], "opus"); // unrelated keys preserved
-        assert_eq!(our_hooks(&reg).len(), 1);
+        assert_eq!(our_hooks(&reg, "hook").len(), 1);
 
         rewrite_settings(&path, |s| remove_stop_hook(s).map(|(v, _)| v)).unwrap();
         let unreg: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
@@ -674,7 +783,7 @@ mod tests {
         let got = merge_stop_hook(before, Path::new(EXE)).unwrap();
         assert_eq!(got["model"], "opus");
         assert!(got["hooks"]["PreToolUse"].is_array());
-        assert_eq!(our_hooks(&got).len(), 1);
+        assert_eq!(our_hooks(&got, "hook").len(), 1);
     }
 
     #[test]
@@ -682,7 +791,7 @@ mod tests {
         let once = merge_stop_hook(json!({}), Path::new(EXE)).unwrap();
         let twice = merge_stop_hook(once.clone(), Path::new(EXE)).unwrap();
         assert_eq!(once, twice);
-        assert_eq!(our_hooks(&twice).len(), 1);
+        assert_eq!(our_hooks(&twice, "hook").len(), 1);
     }
 
     /// #3 regression: re-install from a *different* binary path must REPLACE the
@@ -691,7 +800,7 @@ mod tests {
     fn merge_reinstall_from_new_path_replaces_not_duplicates() {
         let first = merge_stop_hook(json!({}), Path::new("/old/path/koklaude")).unwrap();
         let second = merge_stop_hook(first, Path::new("/new/place/koklaude")).unwrap();
-        let ours = our_hooks(&second);
+        let ours = our_hooks(&second, "hook");
         assert_eq!(ours.len(), 1, "exactly one koklaude hook after reinstall");
         assert_eq!(ours[0]["command"], "'/new/place/koklaude' hook"); // the current path won
         assert!(ours[0].get("args").is_none());
@@ -702,7 +811,7 @@ mod tests {
     fn merge_handles_binary_path_with_spaces_and_quotes() {
         let exe = Path::new("/opt/my 'tools'/bin/koklaude");
         let got = merge_stop_hook(json!({}), exe).unwrap();
-        let ours = our_hooks(&got);
+        let ours = our_hooks(&got, "hook");
         assert_eq!(ours.len(), 1);
         assert_eq!(
             ours[0]["command"],
@@ -719,7 +828,7 @@ mod tests {
         let got = merge_stop_hook(before, Path::new(EXE)).unwrap();
         let stop = got["hooks"]["Stop"].as_array().unwrap();
         assert_eq!(stop.len(), 2); // foreign group + ours
-        assert_eq!(our_hooks(&got).len(), 1);
+        assert_eq!(our_hooks(&got, "hook").len(), 1);
     }
 
     #[test]
@@ -727,6 +836,62 @@ mod tests {
         assert!(merge_stop_hook(json!(42), Path::new(EXE)).is_err());
         assert!(merge_stop_hook(json!({ "hooks": 5 }), Path::new(EXE)).is_err());
         assert!(merge_stop_hook(json!({ "hooks": { "Stop": 5 } }), Path::new(EXE)).is_err());
+    }
+
+    // --- Codex hooks.json merge/remove ----------------------------------
+
+    #[test]
+    fn codex_merge_into_empty_hooks_json() {
+        let got = merge_codex_stop_hook(json!({}), Path::new(EXE)).unwrap();
+        assert_eq!(
+            got,
+            json!({ "hooks": { "Stop": [{ "hooks": [
+                {
+                    "type": "command",
+                    "command": "'/usr/local/bin/koklaude' codex-hook",
+                    "statusMessage": "koklaude speaking"
+                }
+            ] }] } })
+        );
+    }
+
+    #[test]
+    fn codex_merge_preserves_foreign_hooks() {
+        let before = json!({
+            "hooks": {
+                "Stop": [{ "hooks": [{ "type": "command", "command": "mine.sh" }] }],
+                "PreToolUse": [{ "hooks": [{ "type": "command", "command": "audit.sh" }] }]
+            },
+            "notify": ["x"]
+        });
+        let got = merge_codex_stop_hook(before, Path::new(EXE)).unwrap();
+        assert_eq!(got["notify"], json!(["x"]));
+        assert_eq!(got["hooks"]["Stop"].as_array().unwrap().len(), 2);
+        assert!(got["hooks"]["PreToolUse"].is_array());
+        assert_eq!(codex_hooks(&got).len(), 1);
+    }
+
+    #[test]
+    fn codex_merge_is_idempotent_and_path_independent() {
+        let old = merge_codex_stop_hook(json!({}), Path::new("/old/path/koklaude")).unwrap();
+        let new = merge_codex_stop_hook(old, Path::new("/new/path/koklaude")).unwrap();
+        let ours = codex_hooks(&new);
+        assert_eq!(ours.len(), 1);
+        assert_eq!(ours[0]["command"], "'/new/path/koklaude' codex-hook");
+    }
+
+    #[test]
+    fn codex_remove_only_koklaude_hook_and_cleans_empty() {
+        let before = json!({
+            "hooks": { "Stop": [{ "hooks": [{ "type": "command", "command": "mine.sh" }] }] }
+        });
+        let with = merge_codex_stop_hook(before.clone(), Path::new(EXE)).unwrap();
+        let (got, removed) = remove_codex_stop_hook(with).unwrap();
+        assert_eq!(removed, 1);
+        assert_eq!(got, before);
+
+        let only_ours = merge_codex_stop_hook(json!({}), Path::new(EXE)).unwrap();
+        assert_eq!(remove_codex_stop_hook(only_ours).unwrap(), (json!({}), 1));
     }
 
     // --- remove ----------------------------------------------------------
