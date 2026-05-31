@@ -6,13 +6,8 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-# ONNX inference. `download-binaries` fetches the matching ONNX Runtime, so no
-# system install is required.
 ort = { version = "2.0.0-rc.12", features = ["download-binaries"] }
-# Typed engine errors — no `Box<dyn Error>` in the public API.
 thiserror = "2"
 
 [dev-dependencies]
-# The Phase 1 spike (examples/spike.rs) encodes a WAV to play; the engine itself
-# returns raw samples, so hound stays example-only.
 hound = "3.5.1"
