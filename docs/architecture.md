@@ -2,20 +2,21 @@
 
 koklaude is a single Rust binary with a few subcommands. It has two halves:
 
-- a **front end** that knows about Claude Code (the Stop hook + transcript parsing), and
+- a **front end** that knows about assistant hooks (Claude Code or Codex), and
 - an **engine + daemon** that knows nothing about any assistant — it just turns text into spoken audio.
 
-Keeping that seam clean is what lets koklaude later speak for Codex, pi, or anything else without touching the engine.
+Keeping that seam clean lets koklaude speak for another assistant without touching the engine.
 
 ```mermaid
 flowchart TD
-    CC[Claude Code: assistant finishes a turn] -->|Stop hook| HOOK
+    CC[Claude Code: assistant finishes a turn] -->|Stop hook| CLAUDE
+    CX[Codex: assistant finishes a turn] -->|Stop hook| CODEX
 
-    subgraph FRONTEND[koklaude front end · Claude-Code-specific]
-        HOOK[koklaude hook] --> ENABLED{enabled?}
+    subgraph FRONTEND[koklaude front end · assistant adapters]
+        CLAUDE[koklaude hook / claude-hook<br/>Claude transcript JSONL] --> ENABLED{enabled?}
+        CODEX[koklaude codex-hook<br/>last_assistant_message,<br/>then Codex transcript fallback] --> ENABLED
         ENABLED -->|no| EXIT[exit 0 · silent]
-        ENABLED -->|yes| READ[read transcript JSONL,<br/>extract last assistant text]
-        READ --> STRIP[strip code blocks and markdown]
+        ENABLED -->|yes| STRIP[strip code blocks and markdown]
     end
 
     STRIP -->|one line over unix socket| QUEUE
@@ -40,14 +41,15 @@ Each unit has one job, a narrow interface, and can be tested alone.
 
 | Unit | Job | In → Out |
 |---|---|---|
-| `transcript` | Parse the Stop-hook stdin JSON; pull the **last assistant turn** from the session JSONL. | path → `String` |
+| `transcript` | Parse Claude Stop-hook stdin JSON; pull the **last assistant turn** from the Claude session JSONL. | path → `String` |
+| `codex_hook` | Parse Codex Stop-hook stdin JSON; prefer `last_assistant_message`, fall back to Codex session JSONL. | stdin/path → `String` |
 | `clean` | Markdown reply → speakable prose. Drops fenced + inline code, strips headings/lists/emphasis/links. Pure, heavily unit-tested. | `String` → `String` |
 | `engine` | Wrap the model: load Kokoro ONNX + a voice once; `synth(text) → wav`. Phonemize → tokenize → `ort` inference → samples. | `String` → `Vec<u8>` (WAV) |
 | `daemon` | Own one warm `engine`; accept socket connections; enqueue text; play serially. Idle-exit after 30 min. | socket loop |
 | `client` | Front-end side: connect to the daemon (spawn it if absent), send text. Never blocks Claude Code. | `String` → `()` |
 | `config` | `config.toml` (voice, speed, idle timeout) + the `enabled` toggle flag. | — |
 | `paths` | Resolve everything under `~/.config/koklaude/`. | — |
-| `setup` | `koklaude init`: download model, write default config, merge the Stop hook into `~/.claude/settings.json`, enable. | — |
+| `setup` | `koklaude init`: download model, write default config, merge Claude/Codex Stop hooks, enable. | — |
 
 ## The engine pipeline (the only novel part)
 
@@ -97,11 +99,11 @@ The hook must never block or fail Claude Code. Every error path — model missin
 
 ## Extensibility
 
-Only `transcript` (how to find the last reply) and the hook wiring are Claude-Code-specific. The engine and daemon take plain text over a socket. Adding another assistant = a new small adapter that produces text the same way:
+Only the hook adapters are assistant-specific. The engine and daemon take plain text over a socket. Adding another assistant = a new small adapter that produces text the same way:
 
 ```
 Claude Code  ─┐
-Codex        ─┼─▶  (per-assistant adapter: hook + transcript)  ─▶  koklaude daemon  ─▶  speech
+Codex        ─┼─▶  adapter: hook payload + optional transcript  ─▶  koklaude daemon  ─▶  speech
 pi           ─┘
 ```
 

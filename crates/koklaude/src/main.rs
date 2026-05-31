@@ -3,6 +3,7 @@
 
 mod clean;
 mod client;
+mod codex_hook;
 mod config;
 mod daemon;
 mod hook;
@@ -14,10 +15,17 @@ mod toggle;
 mod transcript;
 
 use anyhow::Context;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use config::Config;
 use hanasu::Engine;
 use tracing::info;
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum Adapter {
+    Claude,
+    Codex,
+    All,
+}
 
 #[derive(Parser)]
 #[command(
@@ -33,9 +41,16 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// One-time setup: download the model and register the Stop hook.
-    Init,
+    Init {
+        /// Which assistant hook to install.
+        #[arg(long, value_enum, default_value_t = Adapter::Claude)]
+        adapter: Adapter,
+    },
     /// Remove the Stop hook and disable speech (reverses `init`).
     Uninstall {
+        /// Which assistant hook to remove.
+        #[arg(long, value_enum, default_value_t = Adapter::Claude)]
+        adapter: Adapter,
         /// Also delete the koklaude home (model, voices, config).
         #[arg(long)]
         purge: bool,
@@ -44,6 +59,10 @@ enum Command {
     Daemon,
     /// Stop-hook entrypoint. Reads hook JSON from stdin.
     Hook,
+    /// Claude Code Stop-hook entrypoint. Alias for `hook`.
+    ClaudeHook,
+    /// Codex Stop-hook entrypoint. Reads hook JSON from stdin.
+    CodexHook,
     /// Enable speech.
     On,
     /// Disable speech.
@@ -68,18 +87,19 @@ fn main() -> anyhow::Result<()> {
     // reuse. Daemon/hook log their own domain events in-module; `say` is a manual
     // test path, not a lifecycle action.
     match cli.command {
-        Command::Init => {
-            setup::init(&Config::load()?)?;
+        Command::Init { adapter } => {
+            setup::init(&Config::load()?, adapter)?;
             info!("init");
             Ok(())
         }
-        Command::Uninstall { purge } => {
-            setup::uninstall(&config::home(), purge)?;
+        Command::Uninstall { adapter, purge } => {
+            setup::uninstall(&config::home(), adapter, purge)?;
             info!(purge, "uninstall");
             Ok(())
         }
         Command::Daemon => daemon::run(&Config::load()?),
-        Command::Hook => hook::run(),
+        Command::Hook | Command::ClaudeHook => hook::run(),
+        Command::CodexHook => codex_hook::run(),
         Command::On => {
             toggle::enable(&config::home())?;
             info!("speech enabled");

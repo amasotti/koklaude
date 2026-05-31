@@ -4,14 +4,15 @@
     <img src="docs/koklaude.png" width="350"/>
 </p>
 
-**Local, offline text-to-speech for Claude Code.** Claude finishes a reply — and
-*speaks* it aloud, on your machine. No cloud, no subscription, no API keys. It
-runs the open-weight [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M)
-model locally via ONNX.
+**Local, offline text-to-speech for Claude Code and Codex.** Your assistant
+finishes a reply — and *speaks* it aloud, on your machine. No cloud, no
+subscription, no API keys. It runs the open-weight
+[Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) model locally via ONNX.
 
-> **Status: working on macOS.** `koklaude init` sets everything up, a warm daemon
-> synthesizes, and a Stop hook makes Claude speak each reply. `koklaude say "..."`
-> works standalone too. macOS-only for now (playback uses `afplay`).
+> **Status: working on macOS.** `koklaude init` sets up Claude Code by default;
+> `koklaude init --adapter codex` sets up Codex. A warm daemon synthesizes, and a
+> Stop hook makes replies speak. `koklaude say "..."` works standalone too.
+> macOS-only for now (playback uses `afplay`).
 
 ## Why
 
@@ -75,9 +76,12 @@ cargo install --path crates/koklaude
 ### 3. Run `init`
 
 ```bash
-koklaude init     # checks espeak-ng, downloads model + voices, writes config,
-                  # registers the Stop hook. That's it — Claude now speaks.
+koklaude init                   # default: install Claude Code Stop hook
+koklaude init --adapter codex   # install Codex Stop hook
+koklaude init --adapter all     # install both
 ```
+
+For Codex, run `/hooks` once if prompted and trust the koklaude Stop hook.
 
 Everyday controls:
 
@@ -85,7 +89,8 @@ Everyday controls:
 koklaude off                  # silence (instant, no restart)
 koklaude on                   # speech back
 koklaude say "hello there"    # manual test (standalone, no daemon)
-koklaude uninstall            # cleanly remove the hook (other hooks untouched)
+koklaude uninstall            # remove Claude hook (default; other hooks untouched)
+koklaude uninstall --adapter codex
 ```
 
 ### 4. Configure (optional)
@@ -109,6 +114,7 @@ Paths are overridable via environment variables:
 | `KOKLAUDE_HOME` | `~/.config/koklaude` | koklaude's home — model, voices, `config.toml`, the `enabled` flag, the daemon socket. Set it to relocate all state. |
 | `KOKLAUDE_LOG_DIR` | `~/.koklaude/logs` | Where the daily JSON logs are written. See [`docs/logging.md`](docs/logging.md). |
 | `CLAUDE_CONFIG_DIR` | `~/.claude` | Claude Code's config dir — where `init`/`uninstall` add/remove the Stop hook. (Claude Code's own variable; koklaude honours it.) |
+| `CODEX_HOME` | `~/.codex` | Codex config dir — where `init --adapter codex` writes `hooks.json`. |
 
 Logs sit under `~/.koklaude/`, **not** the config home — they're runtime output,
 not configuration.
@@ -149,12 +155,15 @@ invoked as a **separate CLI process**, so koklaude itself stays **MIT**.
 
 The full reply→audio flow is diagrammed in [`docs/architecture.md`](docs/architecture.md).
 
-## Beyond Claude Code
+## Codex Support
 
-The speech engine (daemon) is assistant-agnostic. Only the thin front end — the
-hook plus the transcript parser — is specific to Claude Code. Supporting
-**Codex**, **pi**, or another assistant later means adding a small adapter, not a
-new engine.
+Codex uses its native `Stop` hook. koklaude reads `last_assistant_message` from
+the hook payload, falls back to the Codex transcript JSONL when needed, cleans the
+text, and sends plain text to the same daemon. Setup writes `~/.codex/hooks.json`
+and preserves foreign hooks.
+
+The speech engine (daemon) is assistant-agnostic. Only the thin front end — hook
+payload and transcript parser — is assistant-specific.
 
 ## Deep dive
 

@@ -1,6 +1,6 @@
 # Debugging: koklaude hook doesn't speak
 
-Procedure to find why the Stop hook stays silent while `koklaude say` works.
+Procedure to find why an assistant Stop hook stays silent while `koklaude say` works.
 Run each step in your own shell (`! <cmd>` inside Claude Code, or a terminal).
 
 ## What's already ruled out
@@ -38,7 +38,9 @@ Read it by `target`:
   silent; persistent `retries` with `dropped > 0` means the transcript read kept
   racing a partial flush.
 - **No `hook fired` line at all** → the hook never ran (hook not registered, or
-  muted — Step 1). Confirm registration: `jq '.hooks.Stop' ~/.claude/settings.json`.
+  muted — Step 1). Confirm registration:
+  `jq '.hooks.Stop' ~/.claude/settings.json` for Claude Code, or
+  `jq '.hooks.Stop' ~/.codex/hooks.json` for Codex.
 - **`koklaude::daemon` — `synth failed` / `playback failed`** → that's the root
   cause; the `error` field has the detail.
 - **`daemon started` then nothing** → the request never reached it (socket /
@@ -61,6 +63,13 @@ Then, in another terminal, fire the hook at a real transcript:
 T=$(ls -t ~/.claude/projects/*/*.jsonl | head -1)
 printf '{"transcript_path":"%s","session_id":"debug","hook_event_name":"Stop"}' "$T" \
   | koklaude hook
+```
+
+For Codex, test the primary hook payload path:
+
+```sh
+printf '{"hook_event_name":"Stop","session_id":"debug","turn_id":"debug","last_assistant_message":"hello"}' \
+  | koklaude codex-hook
 ```
 
 - **Audio + no error** → the path works; the original miss was transient (cold
