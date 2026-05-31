@@ -84,6 +84,38 @@ fn hard_split(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// Recursively split oversize text until every emitted piece is under Kokoro's
+/// phoneme-token limit. Prefer word boundaries; fall back to character halves
+/// for pathological single-token input.
+fn split_to_fit(text: &str) -> Result<Vec<String>> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+    if token_count(trimmed)? <= MAX_PHONEME_LENGTH {
+        return Ok(vec![trimmed.to_string()]);
+    }
+
+    let words: Vec<&str> = trimmed.split_whitespace().collect();
+    if words.len() > 1 {
+        let mid = words.len() / 2;
+        let mut pieces = split_to_fit(&words[..mid].join(" "))?;
+        pieces.extend(split_to_fit(&words[mid..].join(" "))?);
+        return Ok(pieces);
+    }
+
+    let chars: Vec<char> = trimmed.chars().collect();
+    if chars.len() <= 1 {
+        return Ok(vec![trimmed.to_string()]);
+    }
+    let mid = chars.len() / 2;
+    let left: String = chars[..mid].iter().collect();
+    let right: String = chars[mid..].iter().collect();
+    let mut pieces = split_to_fit(&left)?;
+    pieces.extend(split_to_fit(&right)?);
+    Ok(pieces)
+}
+
 /// Split `text` into chunks where each chunk's phoneme token count is at most
 /// [`MAX_PHONEME_LENGTH`]. Sentences (split at `.!?\n…`) are packed greedily;
 /// a sentence that exceeds the budget alone is split at word boundaries by
@@ -102,7 +134,7 @@ pub(crate) fn split_into_chunks(text: &str) -> Result<Vec<String>> {
     let mut current_len: usize = 0;
 
     for sentence in sentences {
-        let token_count = tokenize(&sentence)?.len();
+        let token_count = token_count(&sentence)?;
 
         if token_count == 0 {
             continue; // punctuation-only or blank
@@ -115,7 +147,9 @@ pub(crate) fn split_into_chunks(text: &str) -> Result<Vec<String>> {
                 chunks.push(std::mem::take(&mut current));
                 current_len = 0;
             }
-            chunks.extend(hard_split(&sentence));
+            for piece in hard_split(&sentence) {
+                chunks.extend(split_to_fit(&piece)?);
+            }
             continue;
         }
 
@@ -143,7 +177,15 @@ pub(crate) fn split_into_chunks(text: &str) -> Result<Vec<String>> {
 /// by the caller). Clamped to [`MAX_PHONEME_LENGTH`].
 pub(crate) fn tokenize(text: &str) -> Result<Vec<i64>> {
     let phonemes = phonemize_with_marks(text)?;
-    Ok(encode(&phonemes))
+    Ok(encode_all(&phonemes)
+        .into_iter()
+        .take(MAX_PHONEME_LENGTH)
+        .collect())
+}
+
+fn token_count(text: &str) -> Result<usize> {
+    let phonemes = phonemize_with_marks(text)?;
+    Ok(encode_all(&phonemes).len())
 }
 
 #[derive(Debug, PartialEq)]
@@ -195,12 +237,19 @@ fn phonemize_with_marks(text: &str) -> Result<String> {
 }
 
 /// Map a phoneme string to vocab ids, dropping unknown chars and clamping length.
+#[cfg(test)]
 fn encode(phonemes: &str) -> Vec<i64> {
+    encode_all(phonemes)
+        .into_iter()
+        .take(MAX_PHONEME_LENGTH)
+        .collect()
+}
+
+fn encode_all(phonemes: &str) -> Vec<i64> {
     let vocab = vocab();
     phonemes
         .chars()
         .filter_map(|c| vocab.get(&c).copied())
-        .take(MAX_PHONEME_LENGTH)
         .collect()
 }
 
@@ -402,6 +451,27 @@ mod tests {
                 "chunk has {} tokens, expected ≤{}",
                 tokens.len(),
                 MAX_PHONEME_LENGTH
+            );
+        }
+    }
+
+    #[test]
+    fn split_into_chunks_rechecks_hard_split_pieces() {
+        if !espeak_available() {
+            eprintln!("skipping: espeak-ng not installed");
+            return;
+        }
+        let text = (0..260)
+            .map(|i| format!("supercalifragilisticexpialidocious{i}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let got = split_into_chunks(&text).unwrap();
+        assert!(got.len() > 1, "oversize sentence should be split");
+        for chunk in &got {
+            let tokens = token_count(chunk).unwrap();
+            assert!(
+                tokens <= MAX_PHONEME_LENGTH,
+                "chunk has {tokens} tokens, expected ≤{MAX_PHONEME_LENGTH}"
             );
         }
     }
