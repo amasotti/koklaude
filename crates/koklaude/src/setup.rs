@@ -18,9 +18,13 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
+use tracing::info;
+use ureq::Agent;
+use ureq::config::{Config as UreqConfig, IpFamily};
 
 use crate::config::{Config, write_default_config};
 use crate::toggle;
@@ -103,18 +107,35 @@ fn voice_url(name: &str) -> String {
 const DOWNLOAD_BUF: usize = 64 * 1024;
 /// Redraw the stderr progress line roughly every this many bytes.
 const PROGRESS_STEP: u64 = 8 * 1024 * 1024;
+/// Only stream byte-progress for files at least this large (skips it for the
+/// tiny per-voice `.bin`s — `init` prints a `[i/N]` line for those instead).
+const PROGRESS_MIN_BYTES: u64 = 4 * 1024 * 1024;
 
-/// Download `url` to `dest`. Skips if `dest` already exists non-empty (re-download
-/// is expensive). Streams to a `<dest>.part` sibling then renames on success — an
-/// interrupted download never leaves a truncated file at `dest`. Progress → stderr.
-pub fn download(url: &str, dest: &Path) -> Result<()> {
+/// HTTP client for fetching from Hugging Face.
+///
+/// `Ipv4Only`: HF's IPv6 endpoints black-hole on some networks, and ureq has no
+/// Happy-Eyeballs fallback, so the default `Any` picks the dead IPv6 address and
+/// (without a connect timeout) hangs forever. We only ever talk to HF, so pinning
+/// IPv4 is safe. The timeouts are a belt-and-braces guarantee against any silent
+/// stall. One agent is reused across all files (connection pooling).
+fn http_agent() -> Agent {
+    UreqConfig::builder()
+        .ip_family(IpFamily::Ipv4Only)
+        .timeout_connect(Some(Duration::from_secs(15)))
+        .timeout_recv_response(Some(Duration::from_secs(30)))
+        .build()
+        .into()
+}
+
+/// Download `url` to `dest` via `agent`. Returns `false` (and does nothing) if
+/// `dest` already exists non-empty — re-download is expensive. Streams to a
+/// `<dest>.part` sibling then renames on success, so an interrupted download
+/// never leaves a truncated file at `dest`. Progress → stderr (large files only).
+pub fn download(agent: &Agent, url: &str, dest: &Path) -> Result<bool> {
     if dest.metadata().is_ok_and(|m| m.len() > 0) {
-        eprintln!("  {} present — skipping", dest.display());
-        return Ok(());
+        return Ok(false);
     }
-    let res = ureq::get(url)
-        .call()
-        .with_context(|| format!("GET {url}"))?;
+    let res = agent.get(url).call().with_context(|| format!("GET {url}"))?;
     let body = res.into_body();
     let total = body.content_length();
     let result = stream_to_file(body.into_reader(), dest, total);
@@ -122,7 +143,7 @@ pub fn download(url: &str, dest: &Path) -> Result<()> {
         // A truncated/failed stream must not leave a stale `.part` lying around.
         let _ = std::fs::remove_file(part_path(dest));
     }
-    result
+    result.map(|()| true)
 }
 
 /// Stream `reader` into `dest` via a `.part` temp + atomic rename. Split out from
@@ -133,6 +154,10 @@ fn stream_to_file(mut reader: impl Read, dest: &Path, total: Option<u64>) -> Res
     }
     let part = part_path(dest);
     let name = dest.file_name().and_then(|s| s.to_str()).unwrap_or("file");
+
+    // Big files (the model) show a live byte counter; tiny ones (voices) stay
+    // quiet — `init` prints a per-voice line for those.
+    let show = total.is_none_or(|t| t >= PROGRESS_MIN_BYTES);
 
     let mut file = File::create(&part).with_context(|| format!("create {part:?}"))?;
     let mut buf = vec![0u8; DOWNLOAD_BUF];
@@ -145,15 +170,17 @@ fn stream_to_file(mut reader: impl Read, dest: &Path, total: Option<u64>) -> Res
         file.write_all(&buf[..n])
             .with_context(|| format!("write {part:?}"))?;
         done += n as u64;
-        if done - drawn >= PROGRESS_STEP {
+        if show && done - drawn >= PROGRESS_STEP {
             draw_progress(name, done, total);
             drawn = done;
         }
     }
     file.sync_all().with_context(|| format!("flush {part:?}"))?;
     drop(file);
-    draw_progress(name, done, total);
-    eprintln!();
+    if show {
+        draw_progress(name, done, total);
+        eprintln!();
+    }
 
     std::fs::rename(&part, dest).with_context(|| format!("rename {part:?} -> {dest:?}"))
 }
@@ -310,16 +337,26 @@ pub fn init(cfg: &Config) -> Result<()> {
     }
     std::fs::create_dir_all(&cfg.home).with_context(|| format!("create {:?}", cfg.home))?;
 
-    println!(
-        "fetching model + {} voices into {}…",
-        VOICES.len(),
-        cfg.home.display()
-    );
-    download(&model_url(), &cfg.model_path())?;
-    let voices_dir = cfg.voices_dir();
-    for name in VOICES {
-        download(&voice_url(name), &voices_dir.join(format!("{name}.bin")))?;
+    let agent = http_agent();
+    println!("fetching into {} (IPv4)…", cfg.home.display());
+
+    print!("  model kokoro-v1.0.onnx (~310 MB): ");
+    std::io::stdout().flush().ok();
+    if !download(&agent, &model_url(), &cfg.model_path())? {
+        println!("present, skipped");
     }
+
+    let voices_dir = cfg.voices_dir();
+    let n = VOICES.len();
+    let mut fetched = 0usize;
+    for (i, name) in VOICES.iter().enumerate() {
+        print!("  [{:>2}/{n}] voice {name} … ", i + 1);
+        std::io::stdout().flush().ok();
+        let got = download(&agent, &voice_url(name), &voices_dir.join(format!("{name}.bin")))?;
+        fetched += got as usize;
+        println!("{}", if got { "ok" } else { "present" });
+    }
+    info!(voices = n, fetched, "init: model + voices ready");
 
     if write_default_config(&cfg.home)? {
         println!("wrote default config.toml");
@@ -493,13 +530,10 @@ mod tests {
     #[test]
     #[ignore = "network"]
     fn download_fetches_a_real_file() {
-        let dest = scratch("net").join("LICENSE");
+        let dest = scratch("net").join("config.json");
         let _ = std::fs::remove_file(&dest);
-        download(
-            "https://raw.githubusercontent.com/thewh1teagle/kokoro-onnx/main/LICENSE",
-            &dest,
-        )
-        .unwrap();
+        let got = download(&http_agent(), &format!("{HF_BASE}/config.json"), &dest).unwrap();
+        assert!(got, "fetched (not skipped)");
         assert!(std::fs::metadata(&dest).unwrap().len() > 0);
         assert!(!part_path(&dest).exists());
     }
@@ -509,7 +543,8 @@ mod tests {
         let dest = scratch("skip").join("present.bin");
         std::fs::write(&dest, b"x").unwrap();
         // Bogus URL: if the skip works, it's never fetched, so this can't error.
-        download("http://invalid.invalid/nope", &dest).unwrap();
+        let got = download(&http_agent(), "http://invalid.invalid/nope", &dest).unwrap();
+        assert!(!got, "present → skipped, not re-fetched");
         assert_eq!(std::fs::read(&dest).unwrap(), b"x");
     }
 
