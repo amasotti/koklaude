@@ -16,10 +16,11 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use hanasu::Engine;
+use tracing::{error, info};
 
 use crate::config::Config;
 use crate::{ipc, playback};
@@ -31,6 +32,7 @@ pub fn run(cfg: &Config) -> Result<()> {
 
     let engine = Engine::load(&cfg.model_path(), &cfg.voices_path(), &cfg.voice, cfg.speed)
         .context("load engine (is the model present under the koklaude home?)")?;
+    info!(voice = %cfg.voice, "daemon started");
 
     let (tx, rx) = mpsc::channel::<String>();
     let idle = cfg.idle_timeout;
@@ -75,7 +77,7 @@ fn accept_loop(listener: UnixListener, tx: &Sender<String>) {
                 }
             }
             Ok(_) => {} // empty request — nothing to say
-            Err(e) => eprintln!("daemon: bad request: {e:#}"),
+            Err(e) => error!(error = %format!("{e:#}"), "bad request"),
         }
     }
 }
@@ -85,16 +87,35 @@ fn accept_loop(listener: UnixListener, tx: &Sender<String>) {
 /// unblocked otherwise); the socket is unlinked first so the next spawn binds
 /// fresh.
 fn play_loop(engine: Engine, rx: Receiver<String>, socket: PathBuf, idle: Duration) {
-    drain_until_idle(&rx, idle, |text| match engine.synth(&text) {
-        Ok(audio) => {
-            if let Err(e) = playback::play(&audio) {
-                eprintln!("daemon: playback failed: {e:#}");
-            }
-        }
-        Err(e) => eprintln!("daemon: synth failed: {e:#}"),
-    });
+    drain_until_idle(&rx, idle, |text| speak_one(&engine, &text));
+    info!("daemon idle, exiting");
     let _ = std::fs::remove_file(&socket);
     std::process::exit(0);
+}
+
+/// Synth + play one reply, logging the timing or the failure. The daemon's
+/// stderr is `/dev/null`, so these `tracing` events are the only trace of what
+/// it actually did.
+fn speak_one(engine: &Engine, text: &str) {
+    let chars = text.chars().count();
+    let t = Instant::now();
+    let audio = match engine.synth(text) {
+        Ok(audio) => audio,
+        Err(e) => {
+            error!(error = %format!("{e:#}"), chars, "synth failed");
+            return;
+        }
+    };
+    let synth_ms = t.elapsed().as_millis() as u64;
+
+    let t = Instant::now();
+    if let Err(e) = playback::play(&audio) {
+        error!(error = %format!("{e:#}"), "playback failed");
+        return;
+    }
+    let play_ms = t.elapsed().as_millis() as u64;
+
+    info!(chars, synth_ms, play_ms, "spoke");
 }
 
 /// Drain `rx`, calling `play` for each request, until no request arrives within
