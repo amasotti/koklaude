@@ -24,10 +24,10 @@ fmt:
     cargo fmt --all
 
 build:
-    cargo build
+    cargo build --workspace
 
 release:
-    cargo build --release
+    cargo build --release --workspace
 
 # Phase 1 engine spike: text → phonemes → tokens → audio, then play.
 # Needs ~/.config/koklaude/{kokoro-v1.0.onnx,voices-v1.0.bin} + espeak-ng + unzip.
