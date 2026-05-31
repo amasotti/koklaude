@@ -115,3 +115,8 @@ lifecycle handling makes a killed daemon self-heal on next launch. Full walkthro
 - **Building our own G2P or TTS model.** The goal is to give the assistant a voice,
   not to reinvent phonemization or train a multilingual TTS model. We wire together
   the best existing pieces (`espeak-ng` + Kokoro-82M) and stop there.
+- **Bigger autoregressive models (e.g. [Chatterbox](https://github.com/resemble-ai/chatterbox)).**
+  Fascinating — voice cloning, expressive tags, 23+ languages — but 4–6× larger and
+  autoregressive, so slower CPU inference with variable latency. koklaude speaks short
+  hook notifications, not audiobooks; Kokoro's small feed-forward graph is the right
+  fit. Revisit as an optional second backend if cloning/multilingual ever matters.
