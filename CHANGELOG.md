@@ -2,9 +2,22 @@
 
 All notable changes to this project will be documented in this file (created with git cliff).
 
+## [0.3.0] - 2026-05-31
+
+[Compare with last version](https://github.com/amasotti/koklaude/compare/b2dc285c267e0d60006d003ad7d2ce496e01f22c..24902d0b5a6856e471d87e21c47bbf3ff43f6009)
+### 🚀 Features
+
+
+- Support codex as further coding assistant ([0359e61](https://github.com/amasotti/koklaude/commit/0359e614ac8c15f378708740ffc402beb2cf13ca))
+
+### ⚙️ Miscellaneous Tasks
+
+
+- Remove temporary plan ([6927f4a](https://github.com/amasotti/koklaude/commit/6927f4a5297fe9d7cd8ee259a73ac09adbe625ff))
+
 ## [0.2.0] - 2026-05-31
 
-[Compare with last version](https://github.com/amasotti/koklaude/compare/933170d37fcd8c9359917cc1f34fb17bdf7ab690..17086994259c2e2b7d09e6881fa7a56f335c972a)
+[Compare with last version](https://github.com/amasotti/koklaude/compare/933170d37fcd8c9359917cc1f34fb17bdf7ab690..b2dc285c267e0d60006d003ad7d2ce496e01f22c)
 ### 🚀 Features
 
 
@@ -31,6 +44,8 @@ All notable changes to this project will be documented in this file (created wit
 - Update hanasu version ([9910b69](https://github.com/amasotti/koklaude/commit/9910b69fd72e6c8d9023a7212fee6529cc70189a))
 
 - Remove references to deleted files ([8fa4ae5](https://github.com/amasotti/koklaude/commit/8fa4ae5252ae42b733ece73130b27e5b9de6b5c4))
+
+- Release v0.2.0 ([b2dc285](https://github.com/amasotti/koklaude/commit/b2dc285c267e0d60006d003ad7d2ce496e01f22c))
 
 ## [0.1.0] - 2026-05-31
 
