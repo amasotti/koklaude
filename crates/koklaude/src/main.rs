@@ -7,6 +7,7 @@ mod config;
 mod daemon;
 mod hook;
 mod ipc;
+mod logging;
 mod playback;
 mod setup;
 mod toggle;
@@ -60,6 +61,7 @@ enum Command {
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    logging::init();
     match cli.command {
         Command::Init => setup::init(&Config::load()?),
         Command::Uninstall { purge } => setup::uninstall(&config::home(), purge),
