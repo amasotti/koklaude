@@ -9,7 +9,7 @@
 use std::io::Read;
 use std::path::Path;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use tracing::{info, info_span};
@@ -36,15 +36,18 @@ pub fn run() -> Result<()> {
 /// Resolve the last reply and hand it to the daemon. Errors bubble to `run`,
 /// which logs and swallows them. Short-circuits before any work when muted.
 fn speak_reply() -> Result<()> {
+    let hook_t0 = Instant::now();
     let cfg = Config::load()?;
     if !toggle::is_enabled(&cfg.home) {
         return Ok(());
     }
 
+    let stdin_t0 = Instant::now();
     let mut stdin = String::new();
     std::io::stdin()
         .read_to_string(&mut stdin)
         .context("read hook stdin")?;
+    let stdin_ms = stdin_t0.elapsed().as_millis() as u64;
     let input = transcript::parse_hook_input(&stdin)?;
 
     // Tag every event in this turn with the session, so the log is per-session
@@ -55,10 +58,28 @@ fn speak_reply() -> Result<()> {
     );
     let _guard = span.enter();
 
+    let extract_t0 = Instant::now();
     let Some(text) = reply_to_speak(&input.transcript_path)? else {
+        info!(
+            stdin_ms,
+            extract_ms = extract_t0.elapsed().as_millis() as u64,
+            hook_ms = hook_t0.elapsed().as_millis() as u64,
+            "hook completed without speech"
+        );
         return Ok(()); // nothing worth speaking
     };
-    client::send(&cfg.socket_path(), &text)
+    let extract_ms = extract_t0.elapsed().as_millis() as u64;
+    let send_t0 = Instant::now();
+    client::send(&cfg.socket_path(), &text)?;
+    info!(
+        chars = text.chars().count(),
+        stdin_ms,
+        extract_ms,
+        send_ms = send_t0.elapsed().as_millis() as u64,
+        hook_ms = hook_t0.elapsed().as_millis() as u64,
+        "hook completed"
+    );
+    Ok(())
 }
 
 /// Read the transcript and return the cleaned text of the last assistant turn,

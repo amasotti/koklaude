@@ -57,8 +57,16 @@ impl Engine {
     ///
     /// Returns an empty `Vec` for empty or whitespace-only input (no inference).
     pub fn synth_chunks(&self, text: &str) -> Result<Vec<Audio>> {
-        let chunks = tokenizer::split_into_chunks(text)?;
+        let chunks = self.text_chunks(text)?;
         chunks.iter().map(|chunk| self.synth(chunk)).collect()
+    }
+
+    /// Split text into inference-sized chunks without synthesizing them.
+    ///
+    /// Callers that own playback can use this to pipeline synthesis and audio
+    /// output: synth chunk N+1 while chunk N is already playing.
+    pub fn text_chunks(&self, text: &str) -> Result<Vec<String>> {
+        tokenizer::split_into_chunks(text)
     }
 
     /// Synthesize speech for `text`.

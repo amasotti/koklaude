@@ -18,8 +18,8 @@ use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, bail};
-use hanasu::Engine;
+use anyhow::{Context, Result, anyhow, bail};
+use hanasu::{Audio, Engine};
 use tracing::{error, info};
 
 use crate::config::Config;
@@ -122,33 +122,78 @@ fn speak_one(engine: &Engine, text: &str) {
     let chars = text.chars().count();
     let t0 = Instant::now();
 
-    let chunks = match engine.synth_chunks(text) {
+    let chunks = match engine.text_chunks(text) {
         Ok(c) => c,
         Err(e) => {
-            error!(error = %format!("{e:#}"), chars, "synth_chunks failed");
+            error!(error = %format!("{e:#}"), chars, "text chunking failed");
             return;
         }
     };
-
-    let synth_ms = t0.elapsed().as_millis() as u64;
     let n = chunks.len();
+    info!(
+        chars,
+        chunks = n,
+        chunking_ms = t0.elapsed().as_millis() as u64,
+        "speech queued"
+    );
 
-    for (i, audio) in chunks.into_iter().enumerate() {
-        let t = Instant::now();
-        if let Err(e) = playback::play(&audio) {
-            error!(error = %format!("{e:#}"), chunk = i, "playback failed");
-            return;
-        }
-        let play_ms = t.elapsed().as_millis() as u64;
-        info!(
-            chars,
-            chunk = i,
-            chunks = n,
-            synth_ms,
-            play_ms,
-            "spoke chunk"
-        );
+    if let Err(e) = speak_chunks_pipelined(engine, &chunks, chars) {
+        error!(error = %format!("{e:#}"), chars, chunks = n, "speech failed");
+        return;
     }
+
+    info!(
+        chars,
+        chunks = n,
+        total_ms = t0.elapsed().as_millis() as u64,
+        "spoke reply"
+    );
+}
+
+/// Start playback as soon as the first chunk is synthesized, then synthesize one
+/// chunk ahead while the current chunk is playing.
+fn speak_chunks_pipelined(engine: &Engine, chunks: &[String], chars: usize) -> Result<()> {
+    if chunks.is_empty() {
+        return Ok(());
+    }
+
+    thread::scope(|scope| -> Result<()> {
+        let (mut audio, mut synth_ms) = synth_timed(engine, &chunks[0])?;
+
+        for i in 0..chunks.len() {
+            let next = chunks.get(i + 1).map(|chunk| {
+                let chunk = chunk.as_str();
+                scope.spawn(move || synth_timed(engine, chunk))
+            });
+
+            let play_t0 = Instant::now();
+            playback::play(&audio).with_context(|| format!("play chunk {i}"))?;
+            let play_ms = play_t0.elapsed().as_millis() as u64;
+            info!(
+                chars,
+                chunk = i,
+                chunks = chunks.len(),
+                chunk_chars = chunks[i].chars().count(),
+                synth_ms,
+                play_ms,
+                "spoke chunk"
+            );
+
+            if let Some(handle) = next {
+                (audio, synth_ms) = handle
+                    .join()
+                    .map_err(|_| anyhow!("synth worker panicked"))??;
+            }
+        }
+
+        Ok(())
+    })
+}
+
+fn synth_timed(engine: &Engine, text: &str) -> Result<(Audio, u64)> {
+    let t0 = Instant::now();
+    let audio = engine.synth(text).context("synthesize chunk")?;
+    Ok((audio, t0.elapsed().as_millis() as u64))
 }
 
 /// Drain `rx`, calling `play` for each request, until no request arrives within
