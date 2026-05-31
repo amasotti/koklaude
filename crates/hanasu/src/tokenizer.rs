@@ -14,8 +14,8 @@ use crate::{MAX_PHONEME_LENGTH, Result, g2p};
 #[rustfmt::skip]
 const IPA_VOCABULARY: &[(char, i64)] = &[
     (';', 1), (':', 2), (',', 3), ('.', 4), ('!', 5), ('?', 6),
-    ('—', 9), ('…', 10), ('"', 11), ('(', 12), (')', 13), ('“', 14),
-    ('”', 15), (' ', 16), ('̃', 17), ('ʣ', 18), ('ʥ', 19), ('ʦ', 20),
+    ('—', 9), ('…', 10), ('"', 11), ('(', 12), (')', 13), ('"', 14),
+    ('"', 15), (' ', 16), ('̃', 17), ('ʣ', 18), ('ʥ', 19), ('ʦ', 20),
     ('ʨ', 21), ('ᵝ', 22), ('ꭧ', 23), ('A', 24), ('I', 25), ('O', 31),
     ('Q', 33), ('S', 35), ('T', 36), ('W', 39), ('Y', 41), ('ᵊ', 42),
     ('a', 43), ('b', 44), ('c', 45), ('d', 46), ('e', 47), ('f', 48),
@@ -36,8 +36,108 @@ const IPA_VOCABULARY: &[(char, i64)] = &[
 
 /// Punctuation Kokoro keeps as pause tokens (the marks present in `VOCAB`).
 const PUNCTUATION: &[char] = &[
-    ';', ':', ',', '.', '!', '?', '—', '…', '"', '(', ')', '“', '”',
+    ';', ':', ',', '.', '!', '?', '—', '…', '"', '(', ')', '"', '"',
 ];
+
+/// Characters that end a sentence and become a chunk boundary.
+const SENTENCE_ENDS: &[char] = &['.', '!', '?', '…', '\n'];
+
+/// Split `text` into sentences, keeping each sentence-ending character
+/// attached to its sentence. Leading/trailing whitespace stripped per sentence.
+/// Whitespace-only pieces are dropped.
+fn split_sentences(text: &str) -> Vec<String> {
+    let mut sentences: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for ch in text.chars() {
+        current.push(ch);
+        if SENTENCE_ENDS.contains(&ch) {
+            let trimmed = current.trim().to_string();
+            if !trimmed.is_empty() {
+                sentences.push(trimmed);
+            }
+            current.clear();
+        }
+    }
+    let tail = current.trim().to_string();
+    if !tail.is_empty() {
+        sentences.push(tail);
+    }
+    sentences
+}
+
+/// Conservatively split `text` at word boundaries into pieces of at most
+/// `HARD_SPLIT_WORDS` words each. Used when a single sentence exceeds
+/// `MAX_PHONEME_LENGTH` on its own.
+///
+/// 50 words × ≈5 phonemes/word = ≈250 tokens — well under the 510 limit.
+/// `encode`'s existing clamp is the final safety net for pathological input.
+const HARD_SPLIT_WORDS: usize = 50;
+
+fn hard_split(text: &str) -> Vec<String> {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    if words.is_empty() {
+        return Vec::new();
+    }
+    words
+        .chunks(HARD_SPLIT_WORDS)
+        .map(|chunk| chunk.join(" "))
+        .collect()
+}
+
+/// Split `text` into chunks where each chunk's phoneme token count is at most
+/// [`MAX_PHONEME_LENGTH`]. Sentences (split at `.!?\n…`) are packed greedily;
+/// a sentence that exceeds the budget alone is split at word boundaries by
+/// [`hard_split`].
+///
+/// Returns an empty `Vec` for empty or whitespace-only input.
+pub(crate) fn split_into_chunks(text: &str) -> Result<Vec<String>> {
+    if text.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let sentences = split_sentences(text);
+
+    let mut chunks: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut current_len: usize = 0;
+
+    for sentence in sentences {
+        let token_count = tokenize(&sentence)?.len();
+
+        if token_count == 0 {
+            continue; // punctuation-only or blank
+        }
+
+        if token_count > MAX_PHONEME_LENGTH {
+            // Sentence alone exceeds budget — flush current chunk first, then
+            // hard-split and emit each piece directly.
+            if !current.is_empty() {
+                chunks.push(std::mem::take(&mut current));
+                current_len = 0;
+            }
+            chunks.extend(hard_split(&sentence));
+            continue;
+        }
+
+        if current_len + token_count > MAX_PHONEME_LENGTH {
+            // Adding this sentence would overflow — flush and start fresh.
+            chunks.push(std::mem::take(&mut current));
+            current_len = 0;
+        }
+
+        if !current.is_empty() {
+            current.push(' ');
+        }
+        current.push_str(&sentence);
+        current_len += token_count;
+    }
+
+    if !current.is_empty() {
+        chunks.push(current);
+    }
+
+    Ok(chunks)
+}
 
 /// Convert text to Kokoro token ids, ready for inference (boundary `0`s are added
 /// by the caller). Clamped to [`MAX_PHONEME_LENGTH`].
@@ -173,6 +273,137 @@ mod tests {
             .arg("--version")
             .output()
             .is_ok()
+    }
+
+    // --- split_sentences ---
+
+    #[test]
+    fn split_sentences_on_period() {
+        assert_eq!(
+            split_sentences("Hello world. Goodbye world."),
+            vec!["Hello world.", "Goodbye world."]
+        );
+    }
+
+    #[test]
+    fn split_sentences_on_question_and_exclaim() {
+        assert_eq!(
+            split_sentences("Really? Yes! Okay."),
+            vec!["Really?", "Yes!", "Okay."]
+        );
+    }
+
+    #[test]
+    fn split_sentences_on_newline() {
+        assert_eq!(
+            split_sentences("Line one\nLine two"),
+            vec!["Line one", "Line two"]
+        );
+    }
+
+    #[test]
+    fn split_sentences_no_trailing_empty() {
+        let got = split_sentences("Done.");
+        assert_eq!(got, vec!["Done."]);
+    }
+
+    #[test]
+    fn split_sentences_empty() {
+        let got: Vec<String> = split_sentences("");
+        assert!(got.is_empty());
+    }
+
+    #[test]
+    fn split_sentences_preserves_comma_inside() {
+        assert_eq!(
+            split_sentences("Hello, world. Bye."),
+            vec!["Hello, world.", "Bye."]
+        );
+    }
+
+    // --- hard_split ---
+
+    #[test]
+    fn hard_split_short_sentence_unchanged() {
+        let got = hard_split("Short sentence here.");
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0], "Short sentence here.");
+    }
+
+    #[test]
+    fn hard_split_long_sentence_splits() {
+        let long: String = (0..150)
+            .map(|i| format!("word{i}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let got = hard_split(&long);
+        assert!(
+            got.len() >= 2,
+            "expected at least 2 pieces, got {}",
+            got.len()
+        );
+        for piece in &got {
+            let word_count = piece.split_whitespace().count();
+            assert!(
+                word_count <= 50,
+                "piece has {word_count} words, expected ≤50"
+            );
+        }
+    }
+
+    #[test]
+    fn hard_split_empty() {
+        assert!(hard_split("").is_empty());
+    }
+
+    // --- split_into_chunks ---
+
+    #[test]
+    fn split_into_chunks_empty() {
+        let got = split_into_chunks("").unwrap();
+        assert!(got.is_empty());
+    }
+
+    #[test]
+    fn split_into_chunks_whitespace_only() {
+        let got = split_into_chunks("   \n  ").unwrap();
+        assert!(got.is_empty());
+    }
+
+    #[test]
+    fn split_into_chunks_short_text_is_single_chunk() {
+        if !espeak_available() {
+            eprintln!("skipping: espeak-ng not installed");
+            return;
+        }
+        let text = "Hello. How are you? I am fine.";
+        let got = split_into_chunks(text).unwrap();
+        assert_eq!(got.len(), 1, "short text must be a single chunk");
+    }
+
+    #[test]
+    fn split_into_chunks_each_chunk_under_limit() {
+        if !espeak_available() {
+            eprintln!("skipping: espeak-ng not installed");
+            return;
+        }
+        // 40 repetitions of a short sentence → forces multiple chunks
+        let sentence = "The quick brown fox jumps over the lazy dog. ";
+        let text: String = sentence.repeat(40);
+        let got = split_into_chunks(&text).unwrap();
+        assert!(
+            got.len() > 1,
+            "expected multiple chunks for repeated long text"
+        );
+        for chunk in &got {
+            let tokens = tokenize(chunk).unwrap();
+            assert!(
+                tokens.len() <= MAX_PHONEME_LENGTH,
+                "chunk has {} tokens, expected ≤{}",
+                tokens.len(),
+                MAX_PHONEME_LENGTH
+            );
+        }
     }
 
     #[test]

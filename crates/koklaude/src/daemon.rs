@@ -93,29 +93,41 @@ fn play_loop(engine: Engine, rx: Receiver<String>, socket: PathBuf, idle: Durati
     std::process::exit(0);
 }
 
-/// Synth + play one reply, logging the timing or the failure. The daemon's
+/// Synth + play one reply in chunks, so replies longer than Kokoro's 510-phoneme
+/// window are spoken in full instead of being silently truncated. The daemon's
 /// stderr is `/dev/null`, so these `tracing` events are the only trace of what
 /// it actually did.
 fn speak_one(engine: &Engine, text: &str) {
     let chars = text.chars().count();
-    let t = Instant::now();
-    let audio = match engine.synth(text) {
-        Ok(audio) => audio,
+    let t0 = Instant::now();
+
+    let chunks = match engine.synth_chunks(text) {
+        Ok(c) => c,
         Err(e) => {
-            error!(error = %format!("{e:#}"), chars, "synth failed");
+            error!(error = %format!("{e:#}"), chars, "synth_chunks failed");
             return;
         }
     };
-    let synth_ms = t.elapsed().as_millis() as u64;
 
-    let t = Instant::now();
-    if let Err(e) = playback::play(&audio) {
-        error!(error = %format!("{e:#}"), "playback failed");
-        return;
+    let synth_ms = t0.elapsed().as_millis() as u64;
+    let n = chunks.len();
+
+    for (i, audio) in chunks.into_iter().enumerate() {
+        let t = Instant::now();
+        if let Err(e) = playback::play(&audio) {
+            error!(error = %format!("{e:#}"), chunk = i, "playback failed");
+            return;
+        }
+        let play_ms = t.elapsed().as_millis() as u64;
+        info!(
+            chars,
+            chunk = i,
+            chunks = n,
+            synth_ms,
+            play_ms,
+            "spoke chunk"
+        );
     }
-    let play_ms = t.elapsed().as_millis() as u64;
-
-    info!(chars, synth_ms, play_ms, "spoke");
 }
 
 /// Drain `rx`, calling `play` for each request, until no request arrives within

@@ -49,6 +49,18 @@ impl Engine {
         })
     }
 
+    /// Synthesize speech for `text`, splitting it into ≤510-phoneme chunks first.
+    ///
+    /// Long replies that would previously be silently truncated are now synthesised
+    /// in full. Each element of the returned `Vec` corresponds to one chunk; chunks
+    /// play back-to-back to produce the complete reply.
+    ///
+    /// Returns an empty `Vec` for empty or whitespace-only input (no inference).
+    pub fn synth_chunks(&self, text: &str) -> Result<Vec<Audio>> {
+        let chunks = tokenizer::split_into_chunks(text)?;
+        chunks.iter().map(|chunk| self.synth(chunk)).collect()
+    }
+
     /// Synthesize speech for `text`.
     pub fn synth(&self, text: &str) -> Result<Audio> {
         let ids = tokenizer::tokenize(text)?;
@@ -115,24 +127,58 @@ mod tests {
         assert_eq!(audio.sample_rate, 24_000);
     }
 
-    /// End-to-end smoke test against the real model. Skips unless the model,
-    /// voices, and espeak-ng are all present (they aren't in CI / a fresh clone).
-    #[test]
-    fn synth_hello_world_is_audible() {
-        let dir = match std::env::var("HOME") {
-            Ok(home) => PathBuf::from(home).join(".config/koklaude"),
-            Err(_) => return,
-        };
+    fn model_env() -> Option<(PathBuf, PathBuf)> {
+        let home = std::env::var("HOME").ok()?;
+        let dir = PathBuf::from(home).join(".config/koklaude");
         let model = dir.join("kokoro-v1.0.onnx");
         let voices = dir.join("voices");
         let espeak = std::process::Command::new("espeak-ng")
             .arg("--version")
             .output()
             .is_ok();
-        if !model.exists() || !voices.join("af_heart.bin").exists() || !espeak {
+        if model.exists() && voices.join("af_heart.bin").exists() && espeak {
+            Some((model, voices))
+        } else {
+            None
+        }
+    }
+
+    #[test]
+    fn synth_chunks_empty_text_returns_empty_vec() {
+        let Some((model, voices)) = model_env() else {
+            eprintln!(
+                "skipping synth_chunks_empty_text_returns_empty_vec: model/voices/espeak not present"
+            );
+            return;
+        };
+        let engine = Engine::load(&model, &voices, "af_heart", 1.0).unwrap();
+        let got = engine.synth_chunks("").unwrap();
+        assert!(got.is_empty());
+    }
+
+    #[test]
+    fn synth_chunks_short_text_returns_single_audio() {
+        let Some((model, voices)) = model_env() else {
+            eprintln!(
+                "skipping synth_chunks_short_text_returns_single_audio: model/voices/espeak not present"
+            );
+            return;
+        };
+        let engine = Engine::load(&model, &voices, "af_heart", 1.0).unwrap();
+        let chunks = engine.synth_chunks("Hello. How are you?").unwrap();
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].sample_rate, 24_000);
+        assert!(!chunks[0].samples.is_empty());
+    }
+
+    /// End-to-end smoke test against the real model. Skips unless the model,
+    /// voices, and espeak-ng are all present (they aren't in CI / a fresh clone).
+    #[test]
+    fn synth_hello_world_is_audible() {
+        let Some((model, voices)) = model_env() else {
             eprintln!("skipping synth_hello_world_is_audible: model/voices/espeak not present");
             return;
-        }
+        };
 
         let engine = Engine::load(&model, &voices, "af_heart", 1.0).unwrap();
         let audio = engine.synth("Hello world").unwrap();
