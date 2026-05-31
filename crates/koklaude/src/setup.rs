@@ -135,7 +135,10 @@ pub fn download(agent: &Agent, url: &str, dest: &Path) -> Result<bool> {
     if dest.metadata().is_ok_and(|m| m.len() > 0) {
         return Ok(false);
     }
-    let res = agent.get(url).call().with_context(|| format!("GET {url}"))?;
+    let res = agent
+        .get(url)
+        .call()
+        .with_context(|| format!("GET {url}"))?;
     let body = res.into_body();
     let total = body.content_length();
     let result = stream_to_file(body.into_reader(), dest, total);
@@ -352,7 +355,11 @@ pub fn init(cfg: &Config) -> Result<()> {
     for (i, name) in VOICES.iter().enumerate() {
         print!("  [{:>2}/{n}] voice {name} … ", i + 1);
         std::io::stdout().flush().ok();
-        let got = download(&agent, &voice_url(name), &voices_dir.join(format!("{name}.bin")))?;
+        let got = download(
+            &agent,
+            &voice_url(name),
+            &voices_dir.join(format!("{name}.bin")),
+        )?;
         fetched += got as usize;
         println!("{}", if got { "ok" } else { "present" });
     }
