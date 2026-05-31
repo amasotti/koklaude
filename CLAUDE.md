@@ -6,8 +6,7 @@ Local, offline TTS for Claude Code. Two-crate Rust workspace:
 - `crates/koklaude` — the binary: CLI, Stop-hook, daemon, setup. All
   Claude-Code-specific code lives here only.
 
-Shipped and working on macOS (`init` → daemon → Stop hook). History and the
-next-version list: [`docs/plan.md`](docs/plan.md).
+Shipped and working on macOS (`init` → daemon → Stop hook).
 
 ## Working with me (hard rules)
 - **Never commit, never delete files.** The user does these. Offer, don't execute.

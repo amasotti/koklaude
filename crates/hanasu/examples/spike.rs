@@ -2,7 +2,7 @@
 //!
 //! De-risks the one genuine unknown before any real engine code: Kokoro-82M's
 //! ONNX I/O contract (tensor names/shapes, and that our phoneme→id mapping is
-//! right). See `docs/plan.md` › Phase 1 and `docs/spike.md` for full setup.
+//! right).
 //!
 //! VERIFIED CONTRACT (printed by this spike against kokoro-v1.0.onnx):
 //!   inputs : `tokens` int64 [1, seq]   ← NOT `input_ids` (the common assumption)

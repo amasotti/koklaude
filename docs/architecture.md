@@ -60,7 +60,7 @@ The Kokoro-82M model is the same ONNX artifact every implementation uses. Our en
 
 `espeak-ng` is a runtime dependency of `hanasu`, invoked as an external CLI (not linked). `koklaude init` checks it is present.
 
-**Known unknown to pin first:** Kokoro-82M's exact ONNX input contract — the tensor names/shapes for `input_ids`, `style`, `speed`, and the precise phoneme→id vocabulary. This is settled with a smoke test against the real model file before any further engine code (see [`plan.md`](plan.md)), using `kokoro-js` / `kokoro-onnx` as the reference spec.
+**Known unknown to pin first:** Kokoro-82M's exact ONNX input contract — the tensor names/shapes for `input_ids`, `style`, `speed`, and the precise phoneme→id vocabulary.
 
 ## Runtime model: warm daemon
 
