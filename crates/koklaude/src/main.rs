@@ -17,6 +17,7 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 use config::Config;
 use hanasu::Engine;
+use tracing::info;
 
 #[derive(Parser)]
 #[command(
@@ -62,18 +63,32 @@ enum Command {
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     logging::init();
+    // Lifecycle events are logged here, at the command seam, so each maps to one
+    // user invocation — not to the internal enable/disable steps init/uninstall
+    // reuse. Daemon/hook log their own domain events in-module; `say` is a manual
+    // test path, not a lifecycle action.
     match cli.command {
-        Command::Init => setup::init(&Config::load()?),
-        Command::Uninstall { purge } => setup::uninstall(&config::home(), purge),
+        Command::Init => {
+            setup::init(&Config::load()?)?;
+            info!("init");
+            Ok(())
+        }
+        Command::Uninstall { purge } => {
+            setup::uninstall(&config::home(), purge)?;
+            info!(purge, "uninstall");
+            Ok(())
+        }
         Command::Daemon => daemon::run(&Config::load()?),
         Command::Hook => hook::run(),
         Command::On => {
             toggle::enable(&config::home())?;
+            info!("speech enabled");
             println!("speech enabled");
             Ok(())
         }
         Command::Off => {
             toggle::disable(&config::home())?;
+            info!("speech disabled");
             println!("speech disabled");
             Ok(())
         }
