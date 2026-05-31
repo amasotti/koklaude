@@ -5,76 +5,78 @@ Run each step in your own shell (`! <cmd>` inside Claude Code, or a terminal).
 
 ## What's already ruled out
 
-- **Hook schema.** `{ "command": "/usr/local/bin/koklaude", "args": ["hook"] }`
-  (exec form) is valid and honored — confirmed against
-  https://code.claude.com/docs/en/hooks.md . `init` writes this; it is correct.
 - **Engine + playback.** `koklaude say "test"` is audible → synth, model, voice,
   and `afplay` all work. `say` does **standalone** playback and does **not** go
   through the daemon.
 
-So the failure is isolated to the path the hook uses and `say` does not: the
-**daemon** (hook → unix socket → daemon synthesizes + plays). Daemon stderr is
-redirected to `/dev/null` when spawned detached, so its errors are invisible.
+So the failure is isolated to the path the hook uses and `say` does not: enabled?
+→ transcript parse → unix socket → **daemon** synth + play.
 
-## Step 0 — Fix the settings.json regression first
-
-A manual edit changed the hook to shell form (`"command": ".../koklaude hook"`,
-no `args`). That breaks `koklaude uninstall`, which matches our hook structurally
-by basename `koklaude` **+** `args == ["hook"]`. Revert to exec form:
-
-```jsonc
-// ~/.claude/settings.json  →  hooks.Stop[].hooks[]
-{ "type": "command", "command": "/usr/local/bin/koklaude", "args": ["hook"] }
-```
-
-After this, `koklaude uninstall` will recognize and remove the hook again.
-
-## Step 1 — Confirm the installed binary is stale
+## Step 1 — Is speech on?
 
 ```sh
-/usr/local/bin/koklaude --version   # observed: 0.0.2
-rg '^version' Cargo.toml            # source workspace: 0.1.0
-git tag --list                      # only v0.0.1
+ls ~/.config/koklaude/enabled   # present = on; absent = muted
+koklaude on                     # (re-)enable if missing
 ```
 
-The binary on PATH is behind the source tree. Its daemon/socket protocol may not
-match what the current code expects. This is the prime suspect.
+A muted hook exits early and logs nothing — the most common "silence".
 
-## Step 2 — Watch the daemon in the foreground
+## Step 2 — Read the log (the primary tool)
 
-Stop the detached daemon (it normally auto-respawns) and run one in the
-foreground so its stderr is visible:
+Every hook fire, lifecycle action, and daemon synth/playback error is written to
+a daily JSON log under `~/.koklaude/logs/` (see [`logging.md`](logging.md)) — the
+daemon's stderr goes to `/dev/null`, so this file is where its errors surface.
+
+```sh
+tail -n 20 ~/.koklaude/logs/koklaude.$(date +%F).jsonl | jq .
+```
+
+Read it by `target`:
+
+- **`koklaude::hook` — `hook fired`** with `"outcome":"None"` → nothing to speak.
+  Check `dropped`/`retries`: a turn that ended on a tool call is *correctly*
+  silent; persistent `retries` with `dropped > 0` means the transcript read kept
+  racing a partial flush.
+- **No `hook fired` line at all** → the hook never ran (hook not registered, or
+  muted — Step 1). Confirm registration: `jq '.hooks.Stop' ~/.claude/settings.json`.
+- **`koklaude::daemon` — `synth failed` / `playback failed`** → that's the root
+  cause; the `error` field has the detail.
+- **`daemon started` then nothing** → the request never reached it (socket /
+  client issue); continue to Step 3.
+
+## Step 3 — Watch the daemon live (only if the log is inconclusive)
+
+For ONNX-runtime-level detail the filtered log omits, run a daemon in the
+foreground so its full stderr is visible:
 
 ```sh
 pkill -f 'koklaude daemon'
 rm -f ~/.config/koklaude/daemon.sock
-/usr/local/bin/koklaude daemon          # leave running in this terminal
+koklaude daemon                       # leave running in this terminal
 ```
 
-## Step 3 — Fire the hook at a real transcript, in another terminal
+Then, in another terminal, fire the hook at a real transcript:
 
 ```sh
-T=$(ls -t ~/.claude/projects/-Users-toni-halb-personal-koklaude/*.jsonl | head -1)
-printf '{"transcript_path":"%s","hook_event_name":"Stop"}' "$T" \
-  | /usr/local/bin/koklaude hook
+T=$(ls -t ~/.claude/projects/*/*.jsonl | head -1)
+printf '{"transcript_path":"%s","session_id":"debug","hook_event_name":"Stop"}' "$T" \
+  | koklaude hook
 ```
 
-Watch the foreground daemon terminal:
 - **Audio + no error** → the path works; the original miss was transient (cold
-  start, or a turn that ended on a tool call = correctly silent). Done.
-- **Error in the daemon** → that's the root cause; read it and fix.
-- **Hook prints a `koklaude hook:` error** → failure is client-side (transcript
-  parse / socket connect), not the daemon.
+  start, or a tool-call turn = correctly silent).
+- **Error in the daemon terminal** → root cause; read it and fix.
+- **Hook prints a `koklaude hook:` error** → client-side (transcript parse /
+  socket connect), not the daemon.
 
-## Step 4 — If the daemon path is the culprit: rebuild + reinstall
+## Step 4 — Stale installed binary
 
-The installed 0.0.2 is stale. Rebuild from current source and reinstall, then
-re-register the (correct, exec-form) hook:
+If the binary on PATH lags the source tree, its daemon/socket protocol may not
+match. Rebuild and reinstall, which also re-registers the Stop hook:
 
 ```sh
-just clippy && just test            # green before shipping
-cargo install --path crates/koklaude --force   # or your release-binary path
-koklaude init                       # re-registers the exec-form Stop hook
+koklaude --version                              # installed
+rg '^version' Cargo.toml                         # source workspace
+cargo install --path crates/koklaude --force     # rebuild + reinstall
+koklaude init                                    # re-register the Stop hook
 ```
-
-Then repeat Steps 2–3 to confirm speech.

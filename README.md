@@ -94,7 +94,7 @@ Speech settings live in `~/.config/koklaude/config.toml` (written by `init`).
 Every key is optional — omit one and the built-in default applies. Edit any time.
 
 ```toml
-voice = "af_heart"          # any of the 54 Kokoro voices (e.g. am_adam, bf_emma)
+voice = "af_heart"          # any of the 55 Kokoro voices (e.g. am_adam, bf_emma)
 speed = 1.0                 # pace multiplier; 1.0 = normal
 idle_timeout_minutes = 30   # daemon frees the model after this long idle
 ```

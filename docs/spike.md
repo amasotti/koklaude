@@ -1,5 +1,16 @@
 # Phase 1 engine spike — reproduction
 
+> **Historical record — superseded.** This documents the Phase-1 spike against
+> the *original* `thewh1teagle/kokoro-onnx` assets. The project has since moved to
+> the official community repo `onnx-community/Kokoro-82M-v1.0-ONNX`, whose export
+> has a **different contract**: inputs `input_ids` / `style` / `speed`, output
+> **`waveform`** (not `tokens` / `audio`), and voices are **one raw `<name>.bin`
+> per voice** (not a single npz). The live engine is `hanasu::Engine`
+> (`crates/hanasu/src/engine.rs`), verified by its synth smoke test — that, not
+> this spike, is the source of truth. The figures below are kept as the original
+> de-risking record; `just spike` targets the old assets and no longer reflects a
+> current install.
+
 The spike (`crates/hanasu/examples/spike.rs`) proves the full chain end to end on
 one machine, and pins Kokoro-82M's ONNX I/O contract. This is how to reproduce
 exactly what we ran. It is a **throwaway** — the real engine lands in Phase 2.

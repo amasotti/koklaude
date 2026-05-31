@@ -61,11 +61,10 @@ ls ~/.config/koklaude/voices/ | sed 's/\.bin$//'
 ## 3. Build toolchain
 
 - Rust (stable) + [`just`](https://github.com/casey/just) (`brew install just`).
-- `unzip` on PATH (ships with macOS / most Linux) — the spike reads a voice
-  straight out of the npz with it.
 - **No** system ONNX Runtime needed: `ort` downloads its own binary on first
   build (the `download-binaries` feature).
 
 ---
 
-Once these are in place, run the engine spike — see [`docs/spike.md`](spike.md).
+Once these are in place, run `koklaude init` (see the [README](../README.md)) to
+download the model + voices and register the Stop hook.
