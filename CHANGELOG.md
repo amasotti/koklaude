@@ -2,13 +2,30 @@
 
 All notable changes to this project will be documented in this file (created with git cliff).
 
+## [0.0.3] - 2026-05-31
+
+[Compare with last version](https://github.com/amasotti/koklaude/compare/6f21201b3f753bc6ef40fbf1b11e9eb0085744f8..a006422bf59f62c6620473af87c1b7860b201a08)
+### 🐛 Bug Fixes
+
+
+- Uninstall command ([2b32af8](https://github.com/amasotti/koklaude/commit/2b32af8e0faf106627538cc0c3f4677b7d3e91b1))
+
+- Transcript read race (flaky hook in terminal) ([a006422](https://github.com/amasotti/koklaude/commit/a006422bf59f62c6620473af87c1b7860b201a08))
+
+### ⚙️ Miscellaneous Tasks
+
+
+- Update cargo.lock ([461f6fc](https://github.com/amasotti/koklaude/commit/461f6fc8f4b1d0e0d3112d15babc404318c7f6d3))
+
 ## [0.0.2] - 2026-05-30
 
-[Compare with last version](https://github.com/amasotti/koklaude/compare/1a3b75bd5013a5ef8280431692a2266eacc75e29..daa396641c39955e91e4ef3fe8392fd47c6641ca)
+[Compare with last version](https://github.com/amasotti/koklaude/compare/1a3b75bd5013a5ef8280431692a2266eacc75e29..6f21201b3f753bc6ef40fbf1b11e9eb0085744f8)
 ### ⚙️ Miscellaneous Tasks
 
 
 - Release pipelines ([daa3966](https://github.com/amasotti/koklaude/commit/daa396641c39955e91e4ef3fe8392fd47c6641ca))
+
+- Release v0.0.2 ([6f21201](https://github.com/amasotti/koklaude/commit/6f21201b3f753bc6ef40fbf1b11e9eb0085744f8))
 
 ## [0.0.1] - 2026-05-30
 
