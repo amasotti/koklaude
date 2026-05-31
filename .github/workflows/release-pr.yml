@@ -57,14 +57,11 @@ jobs:
           config: .github/cliff.toml
           args: --bump --output CHANGELOG.md
 
-      - name: Bump workspace version in Cargo.toml
+      - name: Bump workspace version and lockfile
         if: steps.version.outputs.skip == 'false'
         run: |
           sed -i 's/^version = ".*"/version = "${{ steps.version.outputs.bare }}"/' Cargo.toml
-          # Deliberately NOT running `cargo generate-lockfile`: it rebuilds the
-          # whole dependency graph and busts caches for no gain here. Cargo.lock's
-          # local-package version is cosmetic for a solo binary, and CI never
-          # builds with --locked. (Lesson from the netscope release flow.)
+          cargo update -w
 
       - name: Generate release notes for PR body
         id: notes
