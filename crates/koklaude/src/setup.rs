@@ -304,27 +304,51 @@ fn basename_is_koklaude(path: &str) -> bool {
 }
 
 /// Is this inner hook entry one of ours? Matched **structurally** — the `koklaude`
-/// binary invoked with the `hook` subcommand — across both the exec form `init`
-/// writes (`command` = the binary, `args` = `["hook"]`) and the shell form
-/// (`command` = `".../koklaude hook"`), plus a corrupt mix of the two.
+/// binary invoked with the `hook` subcommand — across all three forms:
 ///
-/// The executable is recognized when `koklaude` is the basename of either the whole
-/// `command` (exec form, incl. a path with spaces) or its first whitespace token
-/// (shell form); `hook` is recognized in `args` or in the command's tail. So it's
-/// path-independent — a move/reinstall never orphans it, and a hand-edited entry is
-/// still cleaned.
+/// - **Exec form** (`command` = binary path, `args` = `["hook"]`): legacy; still
+///   detected so uninstall / reinstall can clean it up.
+/// - **Unquoted shell form** (`command` = `".../koklaude hook"`): produced by old
+///   hand-edits.
+/// - **Quoted shell form** (`command` = `"\".../koklaude\" hook"`): what `init`
+///   writes now; the double-quotes make the path space-safe for `sh -c`.
+///
+/// The executable check also handles paths with spaces by looking inside a leading
+/// double-quote pair when present. Path-independent — a move/reinstall never
+/// orphans it.
 fn is_koklaude_hook(entry: &Value) -> bool {
     let Some(command) = entry.get("command").and_then(Value::as_str) else {
         return false;
     };
-    let first_token = command.split_whitespace().next().unwrap_or(command);
-    let exe_is_koklaude = basename_is_koklaude(command) || basename_is_koklaude(first_token);
+
+    // Extract the executable portion and the tail after it, handling both
+    // unquoted (`/path/koklaude hook`) and double-quoted (`"/path/koklaude" hook`)
+    // shell forms.
+    let (exe_str, tail): (&str, &str) = if let Some(rest) = command.strip_prefix('"') {
+        // Quoted shell form: `"<path>" <args>`. Find the closing `"`.
+        match rest.find('"') {
+            Some(close) => {
+                let exe = &rest[..close]; // path without surrounding quotes
+                let after = rest[close + 1..].trim(); // after closing `"`
+                (exe, after)
+            }
+            None => (command, ""), // malformed — fall through to basename check
+        }
+    } else {
+        // Exec form or unquoted shell form: first whitespace-delimited token.
+        let first = command.split_whitespace().next().unwrap_or(command);
+        let rest = command[first.len()..].trim();
+        (first, rest)
+    };
+
+    let exe_is_koklaude = basename_is_koklaude(exe_str) || basename_is_koklaude(command);
 
     let arg_has_hook = entry
         .get("args")
         .and_then(Value::as_array)
         .is_some_and(|a| a.iter().filter_map(Value::as_str).any(|s| s == "hook"));
-    let command_tail_has_hook = command.split_whitespace().skip(1).any(|t| t == "hook");
+    let command_tail_has_hook = tail.split_whitespace().any(|t| t == "hook")
+        || command.split_whitespace().skip(1).any(|t| t == "hook");
 
     exe_is_koklaude && (arg_has_hook || command_tail_has_hook)
 }
