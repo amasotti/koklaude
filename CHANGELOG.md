@@ -2,9 +2,39 @@
 
 All notable changes to this project will be documented in this file (created with git cliff).
 
+## [0.2.0] - 2026-05-31
+
+[Compare with last version](https://github.com/amasotti/koklaude/compare/933170d37fcd8c9359917cc1f34fb17bdf7ab690..17086994259c2e2b7d09e6881fa7a56f335c972a)
+### 🚀 Features
+
+
+- Add support for replies longer than 510 chars ([1e41e74](https://github.com/amasotti/koklaude/commit/1e41e74861031a0c415f8c8a5f1f753f271e68d7))
+
+- Improve performance ([4f8801e](https://github.com/amasotti/koklaude/commit/4f8801e6c8d695a7d1641e44098f747f1ffe942f))
+
+### 🐛 Bug Fixes
+
+
+- Hook command output ([3775862](https://github.com/amasotti/koklaude/commit/377586233e76ad49a7218d2724b798bc8e7794a6))
+
+- Hook command registration ([f7479ad](https://github.com/amasotti/koklaude/commit/f7479adc3bd988d4a6c3d4c96ef57b3d2a46ff7b))
+
+- Several inconsistencies across the project and daemon tx/rx handling ([9716cfc](https://github.com/amasotti/koklaude/commit/9716cfc94237bba725afce8c66633aeceb968d88))
+
+- Hook invocation ([67ba565](https://github.com/amasotti/koklaude/commit/67ba565b2ef37a3bee1b0c38623f4ac7445f7637))
+
+- *(ci)* Run cargo update ([1708699](https://github.com/amasotti/koklaude/commit/17086994259c2e2b7d09e6881fa7a56f335c972a))
+
+### ⚙️ Miscellaneous Tasks
+
+
+- Update hanasu version ([9910b69](https://github.com/amasotti/koklaude/commit/9910b69fd72e6c8d9023a7212fee6529cc70189a))
+
+- Remove references to deleted files ([8fa4ae5](https://github.com/amasotti/koklaude/commit/8fa4ae5252ae42b733ece73130b27e5b9de6b5c4))
+
 ## [0.1.0] - 2026-05-31
 
-[Compare with last version](https://github.com/amasotti/koklaude/compare/fc35862351e6b74ad4520458b0b6e789f3b9bb3e..2e985d7475da772b6d4543c25f5f63893b1e6f40)
+[Compare with last version](https://github.com/amasotti/koklaude/compare/fc35862351e6b74ad4520458b0b6e789f3b9bb3e..933170d37fcd8c9359917cc1f34fb17bdf7ab690)
 ### 🚀 Features
 
 
@@ -31,6 +61,8 @@ All notable changes to this project will be documented in this file (created wit
 - Cleanup cargo.toml files ([2efccf2](https://github.com/amasotti/koklaude/commit/2efccf2690c081c571fbb71af97b20d259f5915a))
 
 - Fmt ([2e985d7](https://github.com/amasotti/koklaude/commit/2e985d7475da772b6d4543c25f5f63893b1e6f40))
+
+- Release v0.1.0 ([933170d](https://github.com/amasotti/koklaude/commit/933170d37fcd8c9359917cc1f34fb17bdf7ab690))
 
 ## [0.0.3] - 2026-05-31
 
