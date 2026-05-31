@@ -2,9 +2,9 @@
 //!
 //! Add or remove koklaude's Stop hook while preserving every other hook the user
 //! has. Verified schema (code.claude.com/docs hooks): `hooks.Stop` is an array of
-//! groups, each `{ "hooks": [ <entry> ] }`. We register the entry in **exec form**
-//! — `{ "type": "command", "command": "<abs path>", "args": ["hook"] }` — so
-//! Claude Code spawns the binary directly, with no shell quoting edge cases.
+//! groups, each `{ "hooks": [ <entry> ] }`. We register the entry in **shell form**
+//! — `{ "type": "command", "command": "'<abs path>' hook" }` — because Claude
+//! Code runs the `command` string; separate `args` are not passed through.
 //! Stop has **no `matcher`** — it fires unconditionally.
 //!
 //! Our hook is identified **structurally** (the `koklaude` binary invoked with the
@@ -290,10 +290,17 @@ fn strip_our_hooks(stop: &mut Vec<Value>) -> usize {
     removed
 }
 
-/// A fresh Stop group registering `exe` in exec form. Claude Code spawns this
-/// directly, so paths with spaces or shell metacharacters need no quoting.
+/// A fresh Stop group registering `exe` in shell form. Claude Code executes the
+/// `command` string, so the subcommand must be present there; separate `args`
+/// are ignored by the hook runner.
 fn hook_group(exe: &Path) -> Value {
-    json!({ "hooks": [{ "type": "command", "command": exe, "args": ["hook"] }] })
+    json!({ "hooks": [{ "type": "command", "command": format!("{} hook", shell_quote(exe)) }] })
+}
+
+/// POSIX single-quote `path` for Claude Code's shell-form hook command.
+fn shell_quote(path: &Path) -> String {
+    let s = path.to_string_lossy();
+    format!("'{}'", s.replace('\'', "'\\''"))
 }
 
 /// Does this path's final component equal `koklaude`?
@@ -319,27 +326,9 @@ fn is_koklaude_hook(entry: &Value) -> bool {
         return false;
     };
 
-    // Extract the executable portion and the tail after it, handling both
-    // unquoted (`/path/koklaude hook`) and double-quoted (`"/path/koklaude" hook`)
-    // shell forms.
-    let (exe_str, tail): (&str, &str) = if let Some(rest) = command.strip_prefix('"') {
-        // Quoted shell form: `"<path>" <args>`. Find the closing `"`.
-        match rest.find('"') {
-            Some(close) => {
-                let exe = &rest[..close]; // path without surrounding quotes
-                let after = rest[close + 1..].trim(); // after closing `"`
-                (exe, after)
-            }
-            None => (command, ""), // malformed — fall through to basename check
-        }
-    } else {
-        // Exec form or unquoted shell form: first whitespace-delimited token.
-        let first = command.split_whitespace().next().unwrap_or(command);
-        let rest = command[first.len()..].trim();
-        (first, rest)
-    };
+    let (exe_str, tail) = shell_first_word(command).unwrap_or_else(|| (command.to_string(), ""));
 
-    let exe_is_koklaude = basename_is_koklaude(exe_str) || basename_is_koklaude(command);
+    let exe_is_koklaude = basename_is_koklaude(&exe_str) || basename_is_koklaude(command);
 
     let arg_has_hook = entry
         .get("args")
@@ -349,6 +338,55 @@ fn is_koklaude_hook(entry: &Value) -> bool {
         || command.split_whitespace().skip(1).any(|t| t == "hook");
 
     exe_is_koklaude && (arg_has_hook || command_tail_has_hook)
+}
+
+/// Parse the first shell word enough for our hook commands:
+/// unquoted, single-quoted with POSIX `'\''` escapes, or simple double-quoted.
+fn shell_first_word(command: &str) -> Option<(String, &str)> {
+    let command = command.trim_start();
+    let mut chars = command.char_indices();
+    let (_, first) = chars.next()?;
+
+    if first == '\'' {
+        let mut out = String::new();
+        let mut i = 1;
+        while i < command.len() {
+            let rest = &command[i..];
+            if let Some(after) = rest.strip_prefix("'\\''") {
+                out.push('\'');
+                i = command.len() - after.len();
+            } else if rest.starts_with('\'') {
+                return Some((out, command[i + 1..].trim()));
+            } else {
+                let ch = rest.chars().next()?;
+                out.push(ch);
+                i += ch.len_utf8();
+            }
+        }
+        return None;
+    }
+
+    if first == '"' {
+        let mut escaped = false;
+        let mut out = String::new();
+        for (idx, ch) in command[1..].char_indices() {
+            if escaped {
+                out.push(ch);
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                let end = 1 + idx;
+                return Some((out, command[end + 1..].trim()));
+            } else {
+                out.push(ch);
+            }
+        }
+        return None;
+    }
+
+    let first = command.split_whitespace().next().unwrap_or(command);
+    Some((first.to_string(), command[first.len()..].trim()))
 }
 
 // --- composition: `koklaude init` / `koklaude uninstall` -----------------
@@ -617,12 +655,12 @@ mod tests {
     // --- merge -----------------------------------------------------------
 
     #[test]
-    fn merge_into_empty_settings_uses_exec_form() {
+    fn merge_into_empty_settings_includes_hook_subcommand_in_command() {
         let got = merge_stop_hook(json!({}), Path::new(EXE)).unwrap();
         assert_eq!(
             got,
             json!({ "hooks": { "Stop": [{ "hooks": [
-                { "type": "command", "command": EXE, "args": ["hook"] }
+                { "type": "command", "command": "'/usr/local/bin/koklaude' hook" }
             ] }] } })
         );
     }
@@ -655,20 +693,22 @@ mod tests {
         let second = merge_stop_hook(first, Path::new("/new/place/koklaude")).unwrap();
         let ours = our_hooks(&second);
         assert_eq!(ours.len(), 1, "exactly one koklaude hook after reinstall");
-        assert_eq!(ours[0]["command"], "/new/place/koklaude"); // the current path won
-        assert_eq!(ours[0]["args"], json!(["hook"]));
+        assert_eq!(ours[0]["command"], "'/new/place/koklaude' hook"); // the current path won
+        assert!(ours[0].get("args").is_none());
     }
 
-    /// #2 regression: a binary path with spaces/quotes is stored in exec form,
-    /// so no shell quoting is needed.
+    /// #2 regression: a binary path with spaces/quotes is shell-quoted correctly.
     #[test]
     fn merge_handles_binary_path_with_spaces_and_quotes() {
-        let exe = Path::new("/opt/my \"tools\"/bin/koklaude");
+        let exe = Path::new("/opt/my 'tools'/bin/koklaude");
         let got = merge_stop_hook(json!({}), exe).unwrap();
         let ours = our_hooks(&got);
         assert_eq!(ours.len(), 1);
-        assert_eq!(ours[0]["command"], "/opt/my \"tools\"/bin/koklaude");
-        assert_eq!(ours[0]["args"], json!(["hook"]));
+        assert_eq!(
+            ours[0]["command"],
+            "'/opt/my '\\''tools'\\''/bin/koklaude' hook"
+        );
+        assert!(ours[0].get("args").is_none());
     }
 
     #[test]
