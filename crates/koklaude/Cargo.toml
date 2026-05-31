@@ -6,9 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-# The speech engine (workspace member; later extractable to its own repo/crate).
 hanasu = { path = "../hanasu" }
-
 anyhow = "1.0.102"
 clap = { version = "4.6.1", features = ["derive"] }
 hound = "3.5.1"
