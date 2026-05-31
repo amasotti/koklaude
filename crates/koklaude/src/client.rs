@@ -11,9 +11,10 @@ use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
+use tracing::info;
 
 use crate::ipc;
 
@@ -27,12 +28,38 @@ const INTERVAL: Duration = Duration::from_millis(50);
 
 /// Send `text` to the daemon at `socket`, spawning it if not yet running.
 pub fn send(socket: &Path, text: &str) -> Result<()> {
+    let t0 = Instant::now();
+    let chars = text.chars().count();
     match UnixStream::connect(socket) {
-        Ok(mut stream) => ipc::write_request(&mut stream, text),
+        Ok(mut stream) => {
+            let connect_ms = t0.elapsed().as_millis() as u64;
+            ipc::write_request(&mut stream, text)?;
+            info!(
+                chars,
+                connect_ms,
+                send_ms = t0.elapsed().as_millis() as u64,
+                spawned = false,
+                "sent speech request"
+            );
+            Ok(())
+        }
         Err(e) if is_absent(&e) => {
+            let spawn_t0 = Instant::now();
             spawn_daemon()?;
+            let spawn_ms = spawn_t0.elapsed().as_millis() as u64;
+            let connect_t0 = Instant::now();
             let mut stream = connect_with_retry(socket, RETRIES, INTERVAL)?;
-            ipc::write_request(&mut stream, text)
+            let connect_ms = connect_t0.elapsed().as_millis() as u64;
+            ipc::write_request(&mut stream, text)?;
+            info!(
+                chars,
+                spawn_ms,
+                connect_ms,
+                send_ms = t0.elapsed().as_millis() as u64,
+                spawned = true,
+                "sent speech request"
+            );
+            Ok(())
         }
         Err(e) => Err(e).with_context(|| format!("connect {socket:?}")),
     }
