@@ -176,6 +176,15 @@ koklaude doesn't bundle or link `espeak-ng` — it calls the separately installe
 yourself** — see [`docs/prerequisites.md`](docs/prerequisites.md). Rationale in
 [`docs/decisions.md`](docs/decisions.md) (D3/D4). *Not legal advice.*
 
+## Why not cooler / newer models?
+
+Kokoro still ranks very high in the TTS model landscape, but the last release was ~1 year ago. Why not use a cooler, newer model?
+
+Newer models like [Chatterbox](https://github.com/resemble-ai/chatterbox) are to be honest impressive (zero-shot voice cloning, expressive paralinguistics,
+23+ languages). But they're autoregressive and 4–6× larger, which means slower, heavier CPU inference with variable latency. koklaude just speaks short "I'm
+done" notifications from a Stop hook, so it wants a small, fast, feed-forward model — exactly what Kokoro-82M is. No cloning, no audiobooks, no GPU. If that
+ever changes, a second backend is the move, not ripping out Kokoro.
+
 ## Acknowledgements
 
 - [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) by hexgrad
