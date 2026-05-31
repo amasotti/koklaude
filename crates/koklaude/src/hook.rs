@@ -70,7 +70,12 @@ fn speak_reply() -> Result<()> {
 fn reply_to_speak(path: &Path) -> Result<Option<String>> {
     let mut turn = read_turn(path)?;
     let mut retries = 0;
-    while turn.last_line_partial && retries < READ_RETRIES {
+    // Retry when: (a) the last line is broken JSON — the transcript is mid-flush,
+    // or (b) a turn boundary exists but no assistant entry has appeared yet — the
+    // hook fired before the response was written (race with the transcript writer).
+    while (turn.last_line_partial || (turn.turn_started && !turn.assistant_seen))
+        && retries < READ_RETRIES
+    {
         thread::sleep(READ_INTERVAL);
         retries += 1;
         turn = read_turn(path)?;

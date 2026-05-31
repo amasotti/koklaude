@@ -3,15 +3,21 @@
 //! Kokoro emits f32 IEEE-float PCM; only float WAV round-trips it (decisions /
 //! plan gotcha). Other-OS playback is Phase 6.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use anyhow::{Context, bail};
 use hanasu::Audio;
+use tempfile::Builder;
 
 /// Synthesized audio → speaker. Writes a temp WAV, then blocks on `afplay`.
 pub fn play(audio: &Audio) -> anyhow::Result<()> {
-    let path = wav_path();
+    let file = Builder::new()
+        .prefix("koklaude-")
+        .suffix(".wav")
+        .tempfile()
+        .context("create temp WAV")?;
+    let path = file.path().to_path_buf();
     write_wav(&path, audio)?;
 
     let status = Command::new("afplay")
@@ -22,10 +28,6 @@ pub fn play(audio: &Audio) -> anyhow::Result<()> {
         bail!("afplay exited with {status}");
     }
     Ok(())
-}
-
-fn wav_path() -> PathBuf {
-    std::env::temp_dir().join("koklaude-say.wav")
 }
 
 fn write_wav(path: &Path, audio: &Audio) -> anyhow::Result<()> {
@@ -62,5 +64,20 @@ mod tests {
         assert_eq!(reader.spec().sample_format, hound::SampleFormat::Float);
         let back: Vec<f32> = reader.samples::<f32>().map(Result::unwrap).collect();
         assert_eq!(back, audio.samples);
+    }
+
+    #[test]
+    fn temp_wav_names_do_not_collide() {
+        let a = Builder::new()
+            .prefix("koklaude-")
+            .suffix(".wav")
+            .tempfile()
+            .unwrap();
+        let b = Builder::new()
+            .prefix("koklaude-")
+            .suffix(".wav")
+            .tempfile()
+            .unwrap();
+        assert_ne!(a.path(), b.path());
     }
 }

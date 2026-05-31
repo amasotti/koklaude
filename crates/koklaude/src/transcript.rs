@@ -62,12 +62,21 @@ pub fn parse_hook_input(stdin: &str) -> Result<HookInput> {
 
 /// Outcome of parsing a transcript: the speakable text plus the signals that
 /// tell a partial flush (CLI raced the Stop hook) apart from a clean tool-only
-/// turn. `last_line_partial` true means the final non-empty line was broken JSON,
-/// i.e. the transcript is still being written, retry-read before trusting it.
+/// turn.
+///
+/// - `last_line_partial` — final non-empty line was broken JSON; the transcript
+///   is still being written, retry-read before trusting it.
+/// - `turn_started` — a real user-prompt boundary was found, so a response is
+///   expected. When `true` and `assistant_seen` is `false`, the assistant entry
+///   hasn't been flushed yet (hook fired before transcript was updated).
+/// - `assistant_seen` — at least one assistant entry appeared after the turn
+///   boundary. `false` for an in-progress response (race) or empty transcript.
 pub struct Turn {
     pub text: Option<String>,
     pub last_line_partial: bool,
     pub dropped: usize,
+    pub turn_started: bool,
+    pub assistant_seen: bool,
 }
 
 /// Extract the last assistant turn's spoken text from a transcript JSONL, plus
@@ -93,16 +102,17 @@ pub fn parse_turn(jsonl: &str) -> Turn {
         .collect();
 
     // Last real user prompt = the turn boundary.
-    let start = entries
-        .iter()
-        .rposition(is_user_prompt)
-        .map_or(0, |i| i + 1);
+    let last_user = entries.iter().rposition(is_user_prompt);
+    let turn_started = last_user.is_some();
+    let start = last_user.map_or(0, |i| i + 1);
 
     let mut texts = Vec::new();
+    let mut assistant_seen = false;
     for entry in &entries[start..] {
         if entry.kind != "assistant" {
             continue;
         }
+        assistant_seen = true;
         if let Some(Message {
             content: Content::Blocks(blocks),
         }) = &entry.message
@@ -122,6 +132,8 @@ pub fn parse_turn(jsonl: &str) -> Turn {
         text,
         last_line_partial,
         dropped,
+        turn_started,
+        assistant_seen,
     }
 }
 
@@ -192,12 +204,33 @@ mod tests {
     fn turn_ending_on_tool_use_has_no_text() {
         let jsonl = r#"{"type":"user","message":{"role":"user","content":"go"}}
 {"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash"}]}}"#;
-        assert_eq!(parse_turn(jsonl).text, None);
+        let turn = parse_turn(jsonl);
+        assert_eq!(turn.text, None);
+        assert!(turn.turn_started);
+        assert!(turn.assistant_seen); // assistant IS there, just no text blocks
     }
 
     #[test]
     fn empty_transcript_is_none() {
-        assert_eq!(parse_turn("").text, None);
+        let turn = parse_turn("");
+        assert_eq!(turn.text, None);
+        assert!(!turn.turn_started);
+        assert!(!turn.assistant_seen);
+    }
+
+    /// Race condition: hook fired before the assistant entry was written.
+    /// `turn_started=true` (user prompt exists) but `assistant_seen=false`.
+    /// The retry loop in `hook.rs` should re-read in this case.
+    #[test]
+    fn user_prompt_without_assistant_signals_race() {
+        let jsonl = r#"{"type":"user","message":{"role":"user","content":"what is rfc 8305?"}}"#;
+        let turn = parse_turn(jsonl);
+        assert_eq!(turn.text, None);
+        assert!(turn.turn_started, "turn boundary found");
+        assert!(
+            !turn.assistant_seen,
+            "no assistant entry yet — hook raced the write"
+        );
     }
 
     #[test]
@@ -209,6 +242,8 @@ mod tests {
         );
         assert!(!turn.last_line_partial);
         assert_eq!(turn.dropped, 0);
+        assert!(turn.turn_started);
+        assert!(turn.assistant_seen);
     }
 
     #[test]
@@ -221,6 +256,8 @@ mod tests {
         assert_eq!(turn.dropped, 1);
         // The broken line is dropped → no speakable text yet.
         assert_eq!(turn.text, None);
+        assert!(turn.turn_started);
+        assert!(!turn.assistant_seen); // broken line was dropped, so not counted
     }
 
     #[test]

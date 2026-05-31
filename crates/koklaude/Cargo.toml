@@ -19,3 +19,4 @@ tracing-subscriber = { version = "0.3.23", features = ["json"] }
 ureq = "3.3.0"
 pulldown-cmark = { version = "0.13.4", default-features = false }
 tracing-appender = "0.2.5"
+tempfile = "3.23.0"

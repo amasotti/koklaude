@@ -14,7 +14,7 @@
 use std::io::ErrorKind;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -35,10 +35,11 @@ pub fn run(cfg: &Config) -> Result<()> {
     info!(voice = %cfg.voice, "daemon started");
 
     let (tx, rx) = mpsc::channel::<String>();
+    let (done_tx, done_rx) = mpsc::channel::<()>();
     let idle = cfg.idle_timeout;
-    thread::spawn(move || play_loop(engine, rx, socket, idle));
+    thread::spawn(move || play_loop(engine, rx, socket, idle, done_tx));
 
-    accept_loop(listener, &tx);
+    accept_loop(listener, &tx, &done_rx);
     Ok(())
 }
 
@@ -61,10 +62,24 @@ fn bind(socket: &Path) -> Result<UnixListener> {
 }
 
 /// Accept connections forever, pushing each non-empty request onto the queue.
-fn accept_loop(listener: UnixListener, tx: &Sender<String>) {
-    for conn in listener.incoming() {
-        let mut stream = match conn {
-            Ok(s) => s,
+fn accept_loop(listener: UnixListener, tx: &Sender<String>, done: &Receiver<()>) {
+    if let Err(e) = listener.set_nonblocking(true) {
+        error!(error = %format!("{e:#}"), "set listener nonblocking failed");
+        return;
+    }
+
+    loop {
+        match done.try_recv() {
+            Ok(()) | Err(TryRecvError::Disconnected) => return,
+            Err(TryRecvError::Empty) => {}
+        }
+
+        let mut stream = match listener.accept() {
+            Ok((s, _)) => s,
+            Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(50));
+                continue;
+            }
             Err(e) => {
                 eprintln!("daemon: accept failed: {e:#}");
                 continue;
@@ -86,11 +101,17 @@ fn accept_loop(listener: UnixListener, tx: &Sender<String>) {
 /// whole process (the accept loop is blocked on `incoming()` and can't be
 /// unblocked otherwise); the socket is unlinked first so the next spawn binds
 /// fresh.
-fn play_loop(engine: Engine, rx: Receiver<String>, socket: PathBuf, idle: Duration) {
+fn play_loop(
+    engine: Engine,
+    rx: Receiver<String>,
+    socket: PathBuf,
+    idle: Duration,
+    done: Sender<()>,
+) {
     drain_until_idle(&rx, idle, |text| speak_one(&engine, &text));
     info!("daemon idle, exiting");
     let _ = std::fs::remove_file(&socket);
-    std::process::exit(0);
+    let _ = done.send(());
 }
 
 /// Synth + play one reply in chunks, so replies longer than Kokoro's 510-phoneme
@@ -163,7 +184,8 @@ mod tests {
         let sock = scratch_sock("order");
         let listener = UnixListener::bind(&sock).unwrap();
         let (tx, rx) = mpsc::channel();
-        thread::spawn(move || accept_loop(listener, &tx));
+        let (_done_tx, done_rx) = mpsc::channel();
+        thread::spawn(move || accept_loop(listener, &tx, &done_rx));
 
         ipc::send(&sock, "first reply").unwrap();
         ipc::send(&sock, "second reply").unwrap();
@@ -178,7 +200,8 @@ mod tests {
         let sock = scratch_sock("empty");
         let listener = UnixListener::bind(&sock).unwrap();
         let (tx, rx) = mpsc::channel();
-        thread::spawn(move || accept_loop(listener, &tx));
+        let (_done_tx, done_rx) = mpsc::channel();
+        thread::spawn(move || accept_loop(listener, &tx, &done_rx));
 
         ipc::send(&sock, "  \n ").unwrap(); // whitespace only → skipped
         ipc::send(&sock, "real").unwrap();
@@ -213,7 +236,8 @@ mod tests {
 
         let listener = bind(&sock).expect("recover stale socket");
         let (tx, rx) = mpsc::channel();
-        thread::spawn(move || accept_loop(listener, &tx));
+        let (_done_tx, done_rx) = mpsc::channel();
+        thread::spawn(move || accept_loop(listener, &tx, &done_rx));
         ipc::send(&sock, "alive").unwrap();
         assert_eq!(rx.recv_timeout(Duration::from_secs(2)).unwrap(), "alive");
     }

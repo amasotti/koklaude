@@ -425,6 +425,7 @@ dependencies = [
  "pulldown-cmark",
  "serde",
  "serde_json",
+ "tempfile",
  "toml",
  "tracing",
  "tracing-appender",

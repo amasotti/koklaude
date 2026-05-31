@@ -3,9 +3,9 @@
 //! Add or remove koklaude's Stop hook while preserving every other hook the user
 //! has. Verified schema (code.claude.com/docs hooks): `hooks.Stop` is an array of
 //! groups, each `{ "hooks": [ <entry> ] }`. We register the entry in **exec form**
-//! — `{ "type": "command", "command": "<abs path>", "args": ["hook"] }` — which
-//! Claude Code spawns directly with no shell, so a binary path containing spaces
-//! needs no quoting. Stop has **no `matcher`** — it fires unconditionally.
+//! — `{ "type": "command", "command": "<abs path>", "args": ["hook"] }` — so
+//! Claude Code spawns the binary directly, with no shell quoting edge cases.
+//! Stop has **no `matcher`** — it fires unconditionally.
 //!
 //! Our hook is identified **structurally** (the `koklaude` binary invoked with the
 //! `hook` subcommand — exec *or* shell form), not by exact command string, so a
@@ -290,12 +290,10 @@ fn strip_our_hooks(stop: &mut Vec<Value>) -> usize {
     removed
 }
 
-/// A fresh Stop group registering `exe` in shell form. Claude Code passes the
-/// `command` string to `sh -c`; the path is double-quoted so spaces in the
-/// binary path are handled correctly.
+/// A fresh Stop group registering `exe` in exec form. Claude Code spawns this
+/// directly, so paths with spaces or shell metacharacters need no quoting.
 fn hook_group(exe: &Path) -> Value {
-    let cmd = format!("\"{}\" hook", exe.to_string_lossy());
-    json!({ "hooks": [{ "type": "command", "command": cmd }] })
+    json!({ "hooks": [{ "type": "command", "command": exe, "args": ["hook"] }] })
 }
 
 /// Does this path's final component equal `koklaude`?
@@ -310,8 +308,8 @@ fn basename_is_koklaude(path: &str) -> bool {
 ///   detected so uninstall / reinstall can clean it up.
 /// - **Unquoted shell form** (`command` = `".../koklaude hook"`): produced by old
 ///   hand-edits.
-/// - **Quoted shell form** (`command` = `"\".../koklaude\" hook"`): what `init`
-///   writes now; the double-quotes make the path space-safe for `sh -c`.
+/// - **Quoted shell form** (`command` = `"\".../koklaude\" hook"`): legacy;
+///   still detected so uninstall / reinstall can clean it up.
 ///
 /// The executable check also handles paths with spaces by looking inside a leading
 /// double-quote pair when present. Path-independent — a move/reinstall never
@@ -619,12 +617,12 @@ mod tests {
     // --- merge -----------------------------------------------------------
 
     #[test]
-    fn merge_into_empty_settings_uses_shell_form() {
+    fn merge_into_empty_settings_uses_exec_form() {
         let got = merge_stop_hook(json!({}), Path::new(EXE)).unwrap();
         assert_eq!(
             got,
             json!({ "hooks": { "Stop": [{ "hooks": [
-                { "type": "command", "command": format!("\"{}\" hook", EXE) }
+                { "type": "command", "command": EXE, "args": ["hook"] }
             ] }] } })
         );
     }
@@ -657,19 +655,20 @@ mod tests {
         let second = merge_stop_hook(first, Path::new("/new/place/koklaude")).unwrap();
         let ours = our_hooks(&second);
         assert_eq!(ours.len(), 1, "exactly one koklaude hook after reinstall");
-        assert_eq!(ours[0]["command"], "\"/new/place/koklaude\" hook"); // the current path won
+        assert_eq!(ours[0]["command"], "/new/place/koklaude"); // the current path won
+        assert_eq!(ours[0]["args"], json!(["hook"]));
     }
 
-    /// #2 regression: a binary path with spaces is quoted in shell form so `sh -c`
-    /// passes the full path as one argument.
+    /// #2 regression: a binary path with spaces/quotes is stored in exec form,
+    /// so no shell quoting is needed.
     #[test]
-    fn merge_handles_binary_path_with_spaces() {
-        let exe = Path::new("/opt/my tools/bin/koklaude");
+    fn merge_handles_binary_path_with_spaces_and_quotes() {
+        let exe = Path::new("/opt/my \"tools\"/bin/koklaude");
         let got = merge_stop_hook(json!({}), exe).unwrap();
         let ours = our_hooks(&got);
         assert_eq!(ours.len(), 1);
-        assert_eq!(ours[0]["command"], "\"/opt/my tools/bin/koklaude\" hook");
-        assert!(ours[0].get("args").is_none());
+        assert_eq!(ours[0]["command"], "/opt/my \"tools\"/bin/koklaude");
+        assert_eq!(ours[0]["args"], json!(["hook"]));
     }
 
     #[test]
