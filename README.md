@@ -1,5 +1,7 @@
 # koklaude
 
+[![FreePalestine.Dev](https://freepalestine.dev/badge?t=d&u=1&r=1)](https://freepalestine.dev)
+
 <p align="center">
     <img src="docs/koklaude.png" width="350"/>
 </p>
